@@ -1,0 +1,30 @@
+name: "Feature Request"
+description: "Suggest an idea or enhancement."
+title: "[Feature] <brief description>"
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: "What pain-point does this feature address?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: "Describe the behaviour or API you’d like to see."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: "Have you looked at different ways to solve this?"
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context / screenshots

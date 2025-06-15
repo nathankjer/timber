@@ -1,0 +1,24 @@
+site_name: timber
+site_description: "One-page 3-D statics solver and visualiser"
+repo_url: https://github.com/yourname/timber
+copyright: "© 2025 timber"
+theme:
+  name: material
+  features:
+    - navigation.instant       # faster page-switching
+    - navigation.tabs
+    - search.highlight
+  palette:
+    scheme: slate
+    primary: indigo
+    accent: amber
+markdown_extensions:
+  - tables
+  - admonition
+  - toc:
+      permalink: "#"
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+plugins:
+  - search

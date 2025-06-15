@@ -1,0 +1,4 @@
+# Patterns match top-level directories
+/src/  @nathankjer
+/tests/  @nathankjer
+/docs/  @nathankjer

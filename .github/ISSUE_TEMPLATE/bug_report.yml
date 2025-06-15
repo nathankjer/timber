@@ -1,0 +1,56 @@
+name: "Bug Report"
+description: "Something isn’t working as expected."
+title: "[Bug] <brief description>"
+labels: ["bug"]
+body:
+  - type: input
+    id: reproduction
+    attributes:
+      label: URL to minimal reproduction (or steps)
+      placeholder: "e.g. link to a GitHub gist or repo"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      options:
+        - Chrome
+        - Firefox
+        - Safari
+        - Edge
+        - Other
+
+  - type: input
+    id: version
+    attributes:
+      label: timber commit/sha
+      placeholder: "git rev-parse --short HEAD"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues (open and closed).
