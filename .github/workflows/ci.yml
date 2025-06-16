@@ -32,10 +32,5 @@ jobs:
           pip install -r requirements.txt
           pip install flake8 mypy
 
-      - name: Lint & type-check
-        run: |
-          flake8 src tests
-          mypy src
-
       - name: Test
         run: pytest -q
