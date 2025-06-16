@@ -6,3 +6,5 @@ flake8
 mypy
 flask
 Flask-Migrate
+Flask-Login
+Flask-Bcrypt

@@ -2,25 +2,26 @@ from __future__ import annotations
 
 import os
 import sys
-from flask import Flask, jsonify, request
-from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
 
-from timber import Joint, Member, Load, Support, Model, solve
+from flask import Flask, jsonify, render_template, request
+
+from timber import Joint, Load, Member, Model, Support, solve
+from timber.extensions import bcrypt, db, login_manager, migrate
 
 # -------------------------------------------------------------------
-# Module-level extensions
+# Module-level extensions are defined in timber.extensions
 # -------------------------------------------------------------------
-db = SQLAlchemy()
-migrate = Migrate()
 
 
 def create_app(config_object: str | None = None) -> Flask:
     """Application factory with optional config object."""
-    app = Flask(__name__)
+    template_root = os.path.join(os.path.dirname(__file__), "timber", "templates")
+    app = Flask(__name__, template_folder=template_root)
 
     # --- Configuration ------------------------------------------------
-    config_object = config_object or os.environ.get("FLASK_CONFIG", "config.DevelopmentConfig")
+    config_object = config_object or os.environ.get(
+        "FLASK_CONFIG", "config.DevelopmentConfig"
+    )
 
     if isinstance(config_object, str):
         sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -33,6 +34,22 @@ def create_app(config_object: str | None = None) -> Flask:
     # --- Initialize extensions ----------------------------------------
     db.init_app(app)
     migrate.init_app(app, db)
+    login_manager.init_app(app)
+    bcrypt.init_app(app)
+    login_manager.login_view = "auth.login"
+
+    from timber.auth import auth_bp
+    from timber.models import User
+
+    @login_manager.user_loader
+    def load_user(user_id: str) -> User | None:
+        return User.query.get(int(user_id))
+
+    app.register_blueprint(auth_bp)
+
+    @app.get("/")
+    def index():
+        return render_template("index.html")
 
     # --- Routes -------------------------------------------------------
     @app.post("/solve")
@@ -57,10 +74,14 @@ def create_app(config_object: str | None = None) -> Flask:
             return jsonify({"error": f"Invalid payload: {exc}"}), 400
 
         res = solve(model)
-        return jsonify({
-            "displacements": {str(k): list(v) for k, v in res.displacements.items()},
-            "reactions":     {str(k): list(v) for k, v in res.reactions.items()},
-        })
+        return jsonify(
+            {
+                "displacements": {
+                    str(k): list(v) for k, v in res.displacements.items()
+                },
+                "reactions": {str(k): list(v) for k, v in res.reactions.items()},
+            }
+        )
 
     return app
 
