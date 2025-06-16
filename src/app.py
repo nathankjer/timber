@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
+import sys
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 
-from src.timber import Joint, Member, Load, Support, Model, solve
+from timber import Joint, Member, Load, Support, Model, solve
 
 # -------------------------------------------------------------------
 # Module-level extensions
@@ -13,13 +15,20 @@ db = SQLAlchemy()
 migrate = Migrate()
 
 
-def create_app() -> Flask:
-    """Application factory: configure Flask, DB, migrations, and routes."""
+def create_app(config_object: str | None = None) -> Flask:
+    """Application factory with optional config object."""
     app = Flask(__name__)
 
     # --- Configuration ------------------------------------------------
-    # e.g. set your DATABASE_URL, SECRET_KEY, etc. in config.py
-    app.config.from_object("config.DevelopmentConfig")
+    config_object = config_object or os.environ.get("FLASK_CONFIG", "config.DevelopmentConfig")
+
+    if isinstance(config_object, str):
+        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+        from werkzeug.utils import import_string
+
+        config_object = import_string(config_object)
+
+    app.config.from_object(config_object)
 
     # --- Initialize extensions ----------------------------------------
     db.init_app(app)
