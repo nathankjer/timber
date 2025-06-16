@@ -1,2 +1,6 @@
 pytest
 numpy
+black
+isort
+flake8
+mypy
