@@ -32,5 +32,23 @@ jobs:
           pip install -r requirements.txt
           pip install flake8 mypy
 
+      - name: Format code
+        run: |
+          isort .
+          black .
+
+      - name: Commit formatting changes
+        if: ${{ github.ref != 'refs/heads/main' }} # only on branches
+        uses: EndBug/add-and-commit@v9
+        with:
+          author_name: github-actions
+          author_email: github-actions@users.noreply.github.com
+          message: "chore: apply formatting fixes (black + isort)"
+
+      - name: Lint
+        run: |
+          flake8 . || echo "::warning file=./ description=flake8 issues"
+          mypy .
+
       - name: Test
         run: pytest -q
