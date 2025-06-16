@@ -154,6 +154,21 @@ make lint   # flake8 + mypy
 make fmt    # black + isort
 ```
 
+### Basic Calculation Example
+
+```python
+from timber import Joint, Member, Load, Support, Model, solve
+
+model = Model(
+    joints=[Joint(0.0, 0.0), Joint(2.0, 0.0)],
+    members=[Member(start=0, end=1, E=210e9, A=0.01, I=8.333e-6)],
+    loads=[Load(joint=1, fy=-1000.0)],
+    supports=[Support(joint=0, ux=True, uy=True, rz=True)],
+)
+results = solve(model)
+print(results.displacements[1][1])  # tip deflection (m)
+```
+
 ---
 
 ## Contributing
