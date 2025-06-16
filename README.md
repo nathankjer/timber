@@ -132,12 +132,16 @@ cd timber
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt  # installs Flask, NumPy, SQLAlchemy, bcrypt, etc.
 
-# 2 · Run database migrations
+# 2 · Configure environment (once per shell)
+export FLASK_APP=src/app.py
+export FLASK_ENV=development
+
+# 3 · Run database migrations
 flask db init
 flask db migrate
 flask db upgrade
 
-# 3 · Boot dev server
+# 4 · Boot dev server
 flask run
 ````
 
