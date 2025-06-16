@@ -133,10 +133,12 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt  # installs Flask, NumPy, SQLAlchemy, bcrypt, etc.
 
 # 2 · Run database migrations
-flask --app src/app db upgrade  # Alembic
+flask db init
+flask db migrate
+flask db upgrade
 
 # 3 · Boot dev server
-flask --app src/app run --reload
+flask run
 ````
 
 Open [http://127.0.0.1:5000](http://127.0.0.1:5000), register a user, create a sheet, and start modelling.
