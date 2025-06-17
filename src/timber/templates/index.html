@@ -4,16 +4,34 @@
 <div class="container-fluid mt-4" data-sheet-id="{{ sheet_id }}">
   {% if current_user.is_authenticated %}
   <div class="row">
+    <div class="col-md-9" id="canvas-pane">
+      <div id="canvas" style="position:relative; border:1px solid #ccc; height:400px;"></div>
+      <div class="mt-2" id="canvas-tools">
+        <select id="element-type" class="form-select form-select-sm d-inline w-auto me-2">
+          <option value="Joint">Joint</option>
+          <option value="Member">Member</option>
+          <option value="Cable">Cable</option>
+          <option value="Plane">Plane</option>
+          <option value="Solid">Solid</option>
+          <option value="Load">Load</option>
+          <option value="Support">Support</option>
+        </select>
+        <button id="add-btn" class="btn btn-primary btn-sm me-2">Add Element</button>
+        <div class="btn-group btn-group-sm" role="group" aria-label="Views">
+          <button type="button" class="btn btn-outline-secondary view-btn active" data-view="+X">+X</button>
+          <button type="button" class="btn btn-outline-secondary view-btn" data-view="-X">-X</button>
+          <button type="button" class="btn btn-outline-secondary view-btn" data-view="+Y">+Y</button>
+          <button type="button" class="btn btn-outline-secondary view-btn" data-view="-Y">-Y</button>
+          <button type="button" class="btn btn-outline-secondary view-btn" data-view="+Z">+Z</button>
+          <button type="button" class="btn btn-outline-secondary view-btn" data-view="-Z">-Z</button>
+        </div>
+        <span class="ms-2">View: <span id="current-view">+X</span></span>
+      </div>
+    </div>
     <div class="col-md-3" id="properties-pane">
       <h2>Properties</h2>
       <div id="props-content" class="mb-3"></div>
       <button id="delete-btn" class="btn btn-danger btn-sm" disabled>Delete</button>
-    </div>
-    <div class="col-md-9" id="canvas-pane">
-      <div class="mb-2">
-        <button id="add-btn" class="btn btn-primary btn-sm">Add Element</button>
-      </div>
-      <div id="canvas" style="position:relative; border:1px solid #ccc; height:400px;"></div>
     </div>
   </div>
   {% else %}
@@ -27,20 +45,29 @@
 const sheetId = document.querySelector('[data-sheet-id]').dataset.sheetId;
 let elements = [];
 let selectedId = null;
+let dragId = null;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+let currentView = '+X';
 
 function render() {
   const canvas = document.getElementById('canvas');
   canvas.innerHTML = '';
+  document.getElementById('current-view').textContent = currentView;
   elements.forEach(el => {
     const div = document.createElement('div');
-    div.className = 'element border rounded-circle bg-primary';
+    div.className = 'element border bg-primary text-white d-flex justify-content-center align-items-center';
     div.style.position = 'absolute';
-    div.style.width = '10px';
-    div.style.height = '10px';
+    div.style.width = '16px';
+    div.style.height = '16px';
     div.style.left = `${el.x}px`;
     div.style.top = `${el.y}px`;
+    div.style.fontSize = '10px';
+    div.style.cursor = 'move';
     div.dataset.id = el.id;
+    div.textContent = el.type ? el.type.charAt(0) : 'J';
     if (el.id === selectedId) div.classList.add('border-warning');
+    div.addEventListener('mousedown', startDrag);
     div.addEventListener('click', e => {
       e.stopPropagation();
       selectElement(el.id);
@@ -56,7 +83,8 @@ function selectElement(id) {
   pane.innerHTML = '';
   if (!el) return;
   const form = document.createElement('div');
-  form.innerHTML = `<div class="mb-2"><label class='form-label'>x</label><input id='prop-x' class='form-control form-control-sm' type='number' value='${el.x}'></div>
+  form.innerHTML = `<div class="mb-2">Type: <strong>${el.type}</strong></div>
+    <div class="mb-2"><label class='form-label'>x</label><input id='prop-x' class='form-control form-control-sm' type='number' value='${el.x}'></div>
     <div class="mb-2"><label class='form-label'>y</label><input id='prop-y' class='form-control form-control-sm' type='number' value='${el.y}'></div>`;
   pane.appendChild(form);
   document.getElementById('delete-btn').disabled = false;
@@ -73,9 +101,14 @@ function selectElement(id) {
   render();
 }
 
-function addElement() {
+function addElement(type) {
+  const defaultX = 50;
+  const defaultY = 50;
+  if (elements.some(e => e.type === type && e.x === defaultX && e.y === defaultY)) {
+    return;
+  }
   const id = Date.now();
-  elements.push({id, x: 50, y: 50});
+  elements.push({id, type, x: defaultX, y: defaultY});
   saveState();
   render();
 }
@@ -90,6 +123,36 @@ function deleteElement() {
   render();
 }
 
+function startDrag(ev) {
+  const id = parseInt(ev.target.dataset.id, 10);
+  const el = elements.find(e => e.id === id);
+  if (!el) return;
+  dragId = id;
+  selectedId = id;
+  dragOffsetX = ev.clientX - el.x;
+  dragOffsetY = ev.clientY - el.y;
+  document.addEventListener('mousemove', onDrag);
+  document.addEventListener('mouseup', endDrag);
+  ev.stopPropagation();
+}
+
+function onDrag(ev) {
+  if (dragId === null) return;
+  const el = elements.find(e => e.id === dragId);
+  if (!el) return;
+  el.x = ev.clientX - dragOffsetX;
+  el.y = ev.clientY - dragOffsetY;
+  render();
+}
+
+function endDrag() {
+  if (dragId === null) return;
+  document.removeEventListener('mousemove', onDrag);
+  document.removeEventListener('mouseup', endDrag);
+  dragId = null;
+  saveState();
+}
+
 async function saveState() {
   await fetch('/sheet/action', {
     method: 'POST',
@@ -102,18 +165,30 @@ async function loadState() {
   const resp = await fetch(`/sheet/${sheetId}`);
   if (resp.ok) {
     const data = await resp.json();
-    elements = data.elements || [];
+    elements = (data.elements || []).map(e => ({type: e.type || 'Joint', ...e}));
     render();
   }
 }
 
-document.getElementById('add-btn').addEventListener('click', addElement);
+document.getElementById('add-btn').addEventListener('click', () => {
+  const type = document.getElementById('element-type').value;
+  addElement(type);
+});
 document.getElementById('delete-btn').addEventListener('click', deleteElement);
 document.getElementById('canvas').addEventListener('click', () => {
   selectedId = null;
   document.getElementById('props-content').innerHTML = '';
   document.getElementById('delete-btn').disabled = true;
   render();
+});
+
+document.querySelectorAll('.view-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentView = btn.dataset.view;
+    document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    render();
+  });
 });
 
 loadState();
