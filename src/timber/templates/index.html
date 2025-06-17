@@ -51,6 +51,12 @@ let dragStartY = 0;
 let dragOrig = null;
 let currentView = '+X';
 let zoom = 1;
+let panX = 0;
+let panY = 0;
+let panStartX = 0;
+let panStartY = 0;
+let panOrigX = 0;
+let panOrigY = 0;
 const globalProps = { g: 9.81, units: 'metric' };
 
 function projectPoint(p) {
@@ -93,7 +99,8 @@ function addNumberInput(container, label, prop, el) {
   div.innerHTML = `<label class='form-label'>${label}</label><input id='prop-${prop}' class='form-control form-control-sm' type='number' value='${el[prop] ?? 0}'>`;
   const input = div.querySelector('input');
   input.addEventListener('input', ev => {
-    el[prop] = parseFloat(ev.target.value);
+    const v = parseFloat(ev.target.value);
+    el[prop] = Number.isFinite(v) ? v : 0;
     render();
     saveState();
   });
@@ -138,8 +145,8 @@ function render() {
   const svg = document.getElementById('canvas');
   svg.innerHTML = '';
   const rect = svg.getBoundingClientRect();
-  const cx = rect.width / 2;
-  const cy = rect.height / 2;
+  const cx = rect.width / 2 + panX;
+  const cy = rect.height / 2 + panY;
   document.getElementById('current-view').textContent = currentView;
 
   elements.forEach(el => {
@@ -152,19 +159,19 @@ function render() {
     let shape;
     if (el.type === 'Member' || el.type === 'Cable') {
       const p1 = projectPoint({ x: el.x, y: el.y, z: el.z });
-      const p2 = projectPoint({ x: el.x2 ?? el.x + 40, y: el.y2 ?? el.y, z: el.z2 ?? el.z });
+      const p2 = projectPoint({ x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z });
       shape = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      shape.setAttribute('x1', cx + p1.x * zoom);
-      shape.setAttribute('y1', cy + p1.y * zoom);
-      shape.setAttribute('x2', cx + p2.x * zoom);
-      shape.setAttribute('y2', cy + p2.y * zoom);
+      shape.setAttribute('x1', cx + (p1.x || 0) * zoom);
+      shape.setAttribute('y1', cy + (p1.y || 0) * zoom);
+      shape.setAttribute('x2', cx + (p2.x || 0) * zoom);
+      shape.setAttribute('y2', cy + (p2.y || 0) * zoom);
       shape.setAttribute('stroke', 'blue');
       shape.setAttribute('stroke-width', 2);
       if (el.type === 'Cable') shape.setAttribute('stroke-dasharray', '4 2');
     } else {
       const p = projectPoint({ x: el.x, y: el.y, z: el.z });
-      const sx = cx + p.x * zoom;
-      const sy = cy + p.y * zoom;
+      const sx = cx + (p.x || 0) * zoom;
+      const sy = cy + (p.y || 0) * zoom;
       if (el.type === 'Joint') {
         shape = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         shape.setAttribute('cx', sx);
@@ -221,9 +228,21 @@ function render() {
 
 function addElement(type) {
   const id = Date.now();
-  const base = { id, type, x: 0, y: 0, z: 0 };
+  const center = unprojectDelta(-panX / zoom, -panY / zoom);
+  const base = {
+    id,
+    type,
+    x: center.x || 0,
+    y: center.y || 0,
+    z: center.z || 0,
+  };
   if (type === 'Member' || type === 'Cable') {
-    Object.assign(base, { x2: 40, y2: 0, z2: 0 });
+    const dir = unprojectDelta(40, 0);
+    Object.assign(base, {
+      x2: base.x + (dir.x || 0),
+      y2: base.y + (dir.y || 0),
+      z2: base.z + (dir.z || 0),
+    });
   }
   elements.push(base);
   saveState();
@@ -279,6 +298,26 @@ function endDrag() {
   saveState();
 }
 
+function startPan(ev) {
+  panStartX = ev.clientX;
+  panStartY = ev.clientY;
+  panOrigX = panX;
+  panOrigY = panY;
+  document.addEventListener('mousemove', onPan);
+  document.addEventListener('mouseup', endPan);
+}
+
+function onPan(ev) {
+  panX = panOrigX + (ev.clientX - panStartX);
+  panY = panOrigY + (ev.clientY - panStartY);
+  render();
+}
+
+function endPan() {
+  document.removeEventListener('mousemove', onPan);
+  document.removeEventListener('mouseup', endPan);
+}
+
 async function saveState() {
   await fetch('/sheet/action', {
     method: 'POST',
@@ -291,7 +330,21 @@ async function loadState() {
   const resp = await fetch(`/sheet/${sheetId}`);
   if (resp.ok) {
     const data = await resp.json();
-    elements = (data.elements || []).map(e => ({ type: e.type || 'Joint', ...e }));
+    elements = (data.elements || []).map(e => {
+      const obj = {
+        id: e.id,
+        type: e.type || 'Joint',
+        x: e.x ?? 0,
+        y: e.y ?? 0,
+        z: e.z ?? 0,
+      };
+      if (obj.type === 'Member' || obj.type === 'Cable') {
+        obj.x2 = e.x2 ?? obj.x;
+        obj.y2 = e.y2 ?? obj.y;
+        obj.z2 = e.z2 ?? obj.z;
+      }
+      return obj;
+    });
     render();
   }
 }
@@ -305,6 +358,7 @@ document.getElementById('canvas').addEventListener('click', () => {
   selectedId = null;
   render();
 });
+document.getElementById('canvas').addEventListener('mousedown', startPan);
 document.getElementById('canvas').addEventListener('wheel', ev => {
   ev.preventDefault();
   zoom *= ev.deltaY < 0 ? 1.1 : 0.9;
