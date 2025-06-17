@@ -12,6 +12,14 @@ from .models import Sheet, Element, Action
 sheet_bp = Blueprint("sheet", __name__, url_prefix="/sheet")
 
 
+@sheet_bp.get("")
+@login_required
+def list_sheets():
+    """Return all sheets for the current user."""
+    sheets = Sheet.query.filter_by(user_id=current_user.id).all()
+    return jsonify([{"id": s.id, "name": s.name} for s in sheets])
+
+
 @sheet_bp.post("")
 @login_required
 def create_sheet():
@@ -54,3 +62,19 @@ def record_action():
 
     db.session.commit()
     return jsonify({"status": "ok"})
+
+
+@sheet_bp.delete("/<int:sheet_id>")
+@login_required
+def delete_sheet(sheet_id: int):
+    """Delete a sheet, ensuring at least one remains."""
+    sheet = Sheet.query.filter_by(id=sheet_id, user_id=current_user.id).first()
+    if not sheet:
+        abort(404)
+    if Sheet.query.filter_by(user_id=current_user.id).count() <= 1:
+        return jsonify({"error": "last-sheet"}), 400
+    Element.query.filter_by(sheet_id=sheet_id).delete()
+    Action.query.filter_by(sheet_id=sheet_id).delete()
+    db.session.delete(sheet)
+    db.session.commit()
+    return jsonify({"status": "deleted"})
