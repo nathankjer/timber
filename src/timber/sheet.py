@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request, abort
+from flask import Blueprint, abort, jsonify, request
 from flask_login import current_user, login_required
 
 from .extensions import db
-from .models import Sheet, Element, Action
+from .models import Action, Element, Sheet
 
 sheet_bp = Blueprint("sheet", __name__, url_prefix="/sheet")
 
@@ -40,6 +40,23 @@ def get_sheet(sheet_id: int):
     return jsonify({"id": sheet.id, "name": sheet.name, "elements": elements})
 
 
+@sheet_bp.put("/<int:sheet_id>")
+@login_required
+def update_sheet(sheet_id: int):
+    """Rename a sheet."""
+    sheet = Sheet.query.filter_by(id=sheet_id, user_id=current_user.id).first()
+    if not sheet:
+        abort(404)
+    if not request.is_json:
+        return jsonify({"error": "JSON body required"}), 400
+    name = request.get_json().get("name")
+    if not name:
+        return jsonify({"error": "name-required"}), 400
+    sheet.name = name
+    db.session.commit()
+    return jsonify({"id": sheet.id, "name": sheet.name})
+
+
 @sheet_bp.post("/action")
 @login_required
 def record_action():
@@ -52,7 +69,12 @@ def record_action():
     if not sheet:
         abort(404)
 
-    action = Action(sheet_id=sheet_id, user_id=current_user.id, json_blob=json.dumps(payload), ts=datetime.utcnow())
+    action = Action(
+        sheet_id=sheet_id,
+        user_id=current_user.id,
+        json_blob=json.dumps(payload),
+        ts=datetime.utcnow(),
+    )
     db.session.add(action)
 
     # Replace elements with current state
