@@ -7,7 +7,7 @@
     <div class="col-md-2" id="sheet-pane">
       <div class="d-flex justify-content-between align-items-center mb-2">
         <span class="fw-bold">Sheets</span>
-        <button id="new-sheet" class="btn btn-sm btn-outline-primary" title="New Sheet"><i class="bi bi-pencil-square"></i></button>
+        <button id="new-sheet" class="btn btn-sm btn-outline-success" title="New Sheet"><i class="bi bi-plus-lg"></i></button>
       </div>
       <ul class="list-group" id="sheet-list">
         {% for s in sheets %}
@@ -30,7 +30,7 @@
           <option value="Load">Load</option>
           <option value="Support">Support</option>
         </select>
-        <button id="add-btn" class="btn btn-primary btn-sm me-2">Add Element</button>
+        <button id="add-btn" class="btn btn-outline-success btn-sm me-2">Add Element</button>
         <div class="btn-group btn-group-sm" role="group" aria-label="Views">
           <button type="button" class="btn btn-outline-secondary view-btn active" data-view="+X">+X</button>
           <button type="button" class="btn btn-outline-secondary view-btn" data-view="-X">-X</button>
@@ -85,7 +85,7 @@ function renderSheetList() {
     li.className = 'list-group-item d-flex justify-content-between align-items-center sheet-item';
     if (s.id === sheetId) li.classList.add('active');
     li.dataset.sheetId = s.id;
-    li.innerHTML = `<span>${s.name}</span><i class="bi bi-trash-fill text-danger delete-sheet" role="button" aria-label="Delete"></i>`;
+    li.innerHTML = `<span>${s.name}</span><i class="bi bi-trash-fill delete-sheet" role="button" aria-label="Delete"></i>`;
     list.appendChild(li);
   });
 }
