@@ -1,10 +1,24 @@
 {% extends 'base.html' %}
 {% block title %}Home{% endblock %}
 {% block content %}
-<div class="container-fluid mt-4" data-sheet-id="{{ sheet_id }}">
+<div class="container-fluid mt-4" data-sheet-id="{{ sheet_id }}" data-sheets='{{ sheets | tojson }}'>
   {% if current_user.is_authenticated %}
   <div class="row">
-    <div class="col-md-9" id="canvas-pane">
+    <div class="col-md-2" id="sheet-pane">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="fw-bold">Sheets</span>
+        <button id="new-sheet" class="btn btn-sm btn-outline-primary" title="New Sheet"><i class="bi bi-pencil-square"></i></button>
+      </div>
+      <ul class="list-group" id="sheet-list">
+        {% for s in sheets %}
+        <li class="list-group-item d-flex justify-content-between align-items-center sheet-item{% if s.id == sheet_id %} active{% endif %}" data-sheet-id="{{ s.id }}">
+          <span>{{ s.name }}</span>
+          <i class="bi bi-trash-fill text-danger delete-sheet" role="button" aria-label="Delete"></i>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="col-md-7" id="canvas-pane">
       <svg id="canvas" style="border:1px solid #ccc; width:100%; height:400px;"></svg>
       <div class="mt-2" id="canvas-tools">
         <select id="element-type" class="form-select form-select-sm d-inline w-auto me-2">
@@ -42,7 +56,9 @@
 </div>
 {% if current_user.is_authenticated %}
 <script>
-const sheetId = document.querySelector('[data-sheet-id]').dataset.sheetId;
+const containerEl = document.querySelector('[data-sheet-id]');
+let sheetId = parseInt(containerEl.dataset.sheetId);
+let sheets = JSON.parse(containerEl.dataset.sheets || '[]');
 let elements = [];
 let selectedId = null;
 let dragId = null;
@@ -59,6 +75,72 @@ let panStartY = 0;
 let panOrigX = 0;
 let panOrigY = 0;
 const globalProps = { g: 9.81, units: 'metric' };
+
+function renderSheetList() {
+  const list = document.getElementById('sheet-list');
+  if (!list) return;
+  list.innerHTML = '';
+  sheets.forEach(s => {
+    const li = document.createElement('li');
+    li.className = 'list-group-item d-flex justify-content-between align-items-center sheet-item';
+    if (s.id === sheetId) li.classList.add('active');
+    li.dataset.sheetId = s.id;
+    li.innerHTML = `<span>${s.name}</span><i class="bi bi-trash-fill text-danger delete-sheet" role="button" aria-label="Delete"></i>`;
+    list.appendChild(li);
+  });
+}
+
+async function createSheet() {
+  const resp = await fetch('/sheet', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Untitled' }) });
+  if (resp.ok) {
+    const data = await resp.json();
+    sheets.push({ id: data.id, name: data.name });
+    sheetId = data.id;
+    elements = [];
+    renderSheetList();
+    loadState();
+  }
+}
+
+async function deleteSheet(id) {
+  const resp = await fetch(`/sheet/${id}`, { method: 'DELETE' });
+  if (resp.ok) {
+    sheets = sheets.filter(s => s.id !== id);
+    if (!sheets.length) {
+      await createSheet();
+      return;
+    }
+    sheetId = sheets[0].id;
+    renderSheetList();
+    loadState();
+  } else {
+    const data = await resp.json().catch(() => ({}));
+    if (data.error === 'last-sheet') {
+      alert('Cannot delete the last sheet.');
+    }
+  }
+}
+
+document.getElementById('new-sheet').addEventListener('click', createSheet);
+document.getElementById('sheet-list').addEventListener('click', ev => {
+  const del = ev.target.closest('.delete-sheet');
+  const item = ev.target.closest('.sheet-item');
+  if (del && item) {
+    deleteSheet(parseInt(item.dataset.sheetId));
+    ev.stopPropagation();
+    return;
+  }
+  if (item) {
+    const id = parseInt(item.dataset.sheetId);
+    if (id !== sheetId) {
+      sheetId = id;
+      renderSheetList();
+      loadState();
+    }
+  }
+});
+
+renderSheetList();
 
 function projectPoint(p) {
   switch (currentView) {

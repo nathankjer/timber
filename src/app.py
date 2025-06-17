@@ -50,15 +50,19 @@ def create_app(config_object: str | None = None) -> Flask:
 
     @app.get("/")
     def index():
+        """Landing page showing a user's sheets."""
         sheet_id = None
+        sheets = []
         if current_user.is_authenticated:
-            sheet = Sheet.query.filter_by(user_id=current_user.id).first()
-            if sheet is None:
+            sheets = Sheet.query.filter_by(user_id=current_user.id).all()
+            if not sheets:
                 sheet = Sheet(name="Untitled", user_id=current_user.id)
                 db.session.add(sheet)
                 db.session.commit()
-            sheet_id = sheet.id
-        return render_template("index.html", sheet_id=sheet_id)
+                sheets = [sheet]
+            sheet_id = sheets[0].id
+            sheets = [{"id": s.id, "name": s.name} for s in sheets]
+        return render_template("index.html", sheet_id=sheet_id, sheets=sheets)
 
     # --- Routes -------------------------------------------------------
     @app.post("/solve")
