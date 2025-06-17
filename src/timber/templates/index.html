@@ -92,6 +92,110 @@ function unprojectDelta(dx, dy) {
       return { x: -dx, y: -dy };
   }
 }
+const SNAP_PIXELS = 10;
+
+function screenCoords(p) {
+  const svg = document.getElementById('canvas');
+  const rect = svg.getBoundingClientRect();
+  const cx = rect.width / 2 + panX;
+  const cy = rect.height / 2 + panY;
+  const proj = projectPoint(p);
+  return { x: cx + (proj.x || 0) * zoom, y: cy + (proj.y || 0) * zoom };
+}
+
+function distanceScreen(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function nearestPointOnLine(p, a, b) {
+  const ab = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+  const ap = { x: p.x - a.x, y: p.y - a.y, z: p.z - a.z };
+  const ab2 = ab.x * ab.x + ab.y * ab.y + ab.z * ab.z;
+  if (ab2 === 0) return { ...a };
+  let t = (ap.x * ab.x + ap.y * ab.y + ap.z * ab.z) / ab2;
+  t = Math.max(0, Math.min(1, t));
+  return { x: a.x + ab.x * t, y: a.y + ab.y * t, z: a.z + ab.z * t };
+}
+
+function getSnapPoints(ignoreId) {
+  const pts = [];
+  elements.forEach(e => {
+    if (e.id === ignoreId) return;
+    if (e.type === 'Joint') pts.push({ x: e.x, y: e.y, z: e.z, kind: 'Joint' });
+    if (e.type === 'Support' || e.type === 'Load') pts.push({ x: e.x, y: e.y, z: e.z, kind: e.type });
+    if (e.type === 'Member' || e.type === 'Cable') {
+      pts.push({ x: e.x, y: e.y, z: e.z, kind: 'End' });
+      pts.push({ x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z, kind: 'End' });
+    }
+    if (e.type === 'Plane') {
+      const s = 20;
+      [-s, s].forEach(dx => [-s, s].forEach(dy => pts.push({ x: e.x + dx, y: e.y + dy, z: e.z, kind: 'PlaneCorner' })));
+    }
+    if (e.type === 'Solid') {
+      const s = 15;
+      [-s, s].forEach(dx => [-s, s].forEach(dy => [-s, s].forEach(dz => pts.push({ x: e.x + dx, y: e.y + dy, z: e.z + dz, kind: 'SolidCorner' }))));
+      [-s, s].forEach(dx => pts.push({ x: e.x + dx, y: e.y, z: e.z, kind: 'FaceCenter' }));
+      [-s, s].forEach(dy => pts.push({ x: e.x, y: e.y + dy, z: e.z, kind: 'FaceCenter' }));
+      [-s, s].forEach(dz => pts.push({ x: e.x, y: e.y, z: e.z + dz, kind: 'FaceCenter' }));
+    }
+  });
+  return pts;
+}
+
+function getSnapLines(ignoreId) {
+  const lines = [];
+  elements.forEach(e => {
+    if (e.id === ignoreId) return;
+    if (e.type === 'Member' || e.type === 'Cable') {
+      lines.push({ p1: { x: e.x, y: e.y, z: e.z }, p2: { x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z } });
+    }
+  });
+  return lines;
+}
+
+function ensureJointAt(x, y, z) {
+  const tol = 1e-6;
+  if (elements.some(e => e.type === 'Joint' && Math.abs(e.x - x) < tol && Math.abs(e.y - y) < tol && Math.abs(e.z - z) < tol)) return;
+  elements.push({ id: Date.now() + Math.random(), type: 'Joint', x, y, z });
+}
+
+function applySnapping(el) {
+  const pts = getSnapPoints(el.id);
+  const lines = getSnapLines(el.id);
+
+  function snapObj(obj, createJoint) {
+    const sc = screenCoords(obj);
+    let best = null;
+    let bestKind = null;
+    let bestDist = SNAP_PIXELS;
+    pts.forEach(pt => {
+      const d = distanceScreen(sc, screenCoords(pt));
+      if (d < bestDist) { best = pt; bestDist = d; bestKind = pt.kind; }
+    });
+    lines.forEach(line => {
+      const near = nearestPointOnLine(obj, line.p1, line.p2);
+      const d = distanceScreen(sc, screenCoords(near));
+      if (d < bestDist) { best = near; bestDist = d; bestKind = 'Line'; }
+    });
+    if (best) {
+      obj.x = best.x; obj.y = best.y; obj.z = best.z;
+      if (createJoint && bestKind === 'End') ensureJointAt(best.x, best.y, best.z);
+    }
+  }
+
+  if (el.type === 'Joint' || el.type === 'Support' || el.type === 'Load') {
+    snapObj(el, false);
+  } else if (el.type === 'Member' || el.type === 'Cable') {
+    const p1 = { x: el.x, y: el.y, z: el.z };
+    const p2 = { x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z };
+    snapObj(p1, true);
+    snapObj(p2, true);
+    el.x = p1.x; el.y = p1.y; el.z = p1.z;
+    el.x2 = p2.x; el.y2 = p2.y; el.z2 = p2.z;
+  } else {
+    snapObj(el, false);
+  }
+}
 
 function addNumberInput(container, label, prop, el) {
   const div = document.createElement('div');
@@ -245,6 +349,7 @@ function addElement(type) {
     });
   }
   elements.push(base);
+  applySnapping(base);
   saveState();
   render();
 }
@@ -294,8 +399,11 @@ function endDrag() {
   if (dragId === null) return;
   document.removeEventListener('mousemove', onDrag);
   document.removeEventListener('mouseup', endDrag);
+  const el = elements.find(e => e.id === dragId);
+  if (el) applySnapping(el);
   dragId = null;
   saveState();
+  render();
 }
 
 function startPan(ev) {
