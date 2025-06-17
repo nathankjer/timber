@@ -75,33 +75,6 @@ _A single-page web application that lets **non-experts** solve and **visualise c
 
 ---
 
-## User Interface
-
-```
-
-┌───────────────┬───────────────────────────────┐
-│  Properties   │            Canvas             │
-│  (left pane)  │        (right pane)           │
-└───────────────┴───────────────────────────────┘
-
-````
-
-### Canvas Tools
-* Zoom ± (mouse-wheel & buttons) • Add / Delete / Select element  
-* Home view reset • Six orthographic thumbnails
-
-### Properties Pane
-
-| Group | Fields |
-|-------|--------|
-| **Element** | Context-sensitive attrs + load table |
-| **Global** | Gravity **g** (default = 9.807 m s⁻²); units toggle (Metric ↔ Imperial) |
-| **View** | Camera position (x y z), target, zoom (live-update) |
-
-Inline validation reverts invalid entries.
-
----
-
 ## Architecture & Technology
 
 | Layer | Tech / Package | Key Points |
