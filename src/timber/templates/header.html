@@ -4,8 +4,8 @@
     <div class="d-flex ms-auto">
       {% if current_user.is_authenticated %}
       <div class="dropdown">
-        <a class="btn btn-link dropdown-toggle" href="#" id="accountMenu" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-          <i class="bi bi-person-fill"></i>
+        <a class="btn btn-link dropdown-toggle text-decoration-none" href="#" id="accountMenu" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+          <i class="bi bi-person-fill"></i> Account
         </a>
         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="accountMenu">
           <li><a class="dropdown-item" href="{{ url_for('auth.account') }}">My Account</a></li>
@@ -19,7 +19,7 @@
       </div>
       {% else %}
       <a href="{{ url_for('auth.register') }}" class="btn btn-primary me-2">Sign Up</a>
-      <a href="{{ url_for('auth.login') }}" class="nav-link">Log In</a>
+      <a href="{{ url_for('auth.login') }}" class="nav-link p-2">Log In</a>
       {% endif %}
     </div>
   </div>
