@@ -27,7 +27,12 @@ def test_user_registration_and_login():
         client = app.test_client()
         client.post(
             "/auth/register",
-            data={"email": "user@example.com", "password": "secret"},
+            data={
+                "name": "User",
+                "email": "user@example.com",
+                "password": "secret",
+                "confirm_password": "secret",
+            },
             follow_redirects=True,
         )
         assert User.query.count() == 1
@@ -46,12 +51,22 @@ def test_duplicate_registration():
         client = app.test_client()
         client.post(
             "/auth/register",
-            data={"email": "dup@example.com", "password": "secret"},
+            data={
+                "name": "Dup",
+                "email": "dup@example.com",
+                "password": "secret",
+                "confirm_password": "secret",
+            },
             follow_redirects=True,
         )
         resp = client.post(
             "/auth/register",
-            data={"email": "dup@example.com", "password": "secret"},
+            data={
+                "name": "Dup",
+                "email": "dup@example.com",
+                "password": "secret",
+                "confirm_password": "secret",
+            },
             follow_redirects=True,
         )
         assert b"Email already registered" in resp.data
