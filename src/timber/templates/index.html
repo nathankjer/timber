@@ -49,6 +49,7 @@ let dragId = null;
 let dragStartX = 0;
 let dragStartY = 0;
 let dragOrig = null;
+let dragMode = 'body';
 let currentView = '+X';
 let zoom = 1;
 let panX = 0;
@@ -105,6 +106,52 @@ function screenCoords(p) {
 
 function distanceScreen(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function distanceToSegment2D(p, a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  const px = a.x + t * dx;
+  const py = a.y + t * dy;
+  return Math.hypot(p.x - px, p.y - py);
+}
+
+function axisInfo(view) {
+  switch (view) {
+    case '+X':
+      return { h: { axis: 'y', sign: 1 }, v: { axis: 'z', sign: -1 } };
+    case '-X':
+      return { h: { axis: 'y', sign: -1 }, v: { axis: 'z', sign: -1 } };
+    case '+Y':
+      return { h: { axis: 'x', sign: 1 }, v: { axis: 'z', sign: -1 } };
+    case '-Y':
+      return { h: { axis: 'x', sign: -1 }, v: { axis: 'z', sign: -1 } };
+    case '+Z':
+      return { h: { axis: 'x', sign: 1 }, v: { axis: 'y', sign: -1 } };
+    case '-Z':
+      return { h: { axis: 'x', sign: -1 }, v: { axis: 'y', sign: -1 } };
+  }
+}
+
+const axisDims = { x: 'width', y: 'height', z: 'depth' };
+
+function planeScreenRect(el) {
+  const c = screenCoords(el);
+  const l = (el.length ?? 40) * zoom;
+  const w = (el.width ?? 40) * zoom;
+  return { left: c.x - l / 2, right: c.x + l / 2, top: c.y - w / 2, bottom: c.y + w / 2 };
+}
+
+function solidScreenRect(el) {
+  const info = axisInfo(currentView);
+  const h = (el[axisDims[info.h.axis]] ?? 30) * zoom;
+  const v = (el[axisDims[info.v.axis]] ?? 30) * zoom;
+  const c = screenCoords(el);
+  return { left: c.x - h / 2, right: c.x + h / 2, top: c.y - v / 2, bottom: c.y + v / 2 };
 }
 
 function nearestPointOnLine(p, a, b) {
@@ -222,6 +269,13 @@ function renderProperties() {
       ['x', 'y', 'z'].forEach(p => addNumberInput(form, p, p, el));
       if (el.type === 'Member' || el.type === 'Cable') {
         ['x2', 'y2', 'z2'].forEach(p => addNumberInput(form, p, p, el));
+      } else if (el.type === 'Plane') {
+        ['length', 'width'].forEach(p => addNumberInput(form, p, p, el));
+      } else if (el.type === 'Solid') {
+        ['width', 'height', 'depth'].forEach(p => addNumberInput(form, p, p, el));
+      } else if (el.type === 'Load' || el.type === 'Support') {
+        const unit = globalProps.units === 'metric' ? 'N' : 'lb';
+        addNumberInput(form, `amount (${unit})`, 'amount', el);
       }
       pane.appendChild(form);
       document.getElementById('delete-btn').disabled = false;
@@ -284,30 +338,36 @@ function render() {
         shape.setAttribute('fill', 'blue');
       } else if (el.type === 'Plane') {
         shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        shape.setAttribute('x', sx - 20 * zoom);
-        shape.setAttribute('y', sy - 20 * zoom);
-        shape.setAttribute('width', 40 * zoom);
-        shape.setAttribute('height', 40 * zoom);
+        const l = (el.length ?? 40) * zoom;
+        const w = (el.width ?? 40) * zoom;
+        shape.setAttribute('x', sx - l / 2);
+        shape.setAttribute('y', sy - w / 2);
+        shape.setAttribute('width', l);
+        shape.setAttribute('height', w);
         shape.setAttribute('fill', 'rgba(0,0,255,0.2)');
         shape.setAttribute('stroke', 'blue');
       } else if (el.type === 'Solid') {
         shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        shape.setAttribute('x', sx - 15 * zoom);
-        shape.setAttribute('y', sy - 15 * zoom);
-        shape.setAttribute('width', 30 * zoom);
-        shape.setAttribute('height', 30 * zoom);
+        const info = axisInfo(currentView);
+        const h = (el[axisDims[info.h.axis]] ?? 30) * zoom;
+        const v = (el[axisDims[info.v.axis]] ?? 30) * zoom;
+        shape.setAttribute('x', sx - h / 2);
+        shape.setAttribute('y', sy - v / 2);
+        shape.setAttribute('width', h);
+        shape.setAttribute('height', v);
         shape.setAttribute('fill', 'rgba(0,0,255,0.4)');
         shape.setAttribute('stroke', 'blue');
       } else if (el.type === 'Load') {
         shape = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        const amt = (el.amount ?? 20) * zoom;
         shape.setAttribute('x1', sx);
-        shape.setAttribute('y1', sy - 20 * zoom);
+        shape.setAttribute('y1', sy - amt);
         shape.setAttribute('x2', sx);
         shape.setAttribute('y2', sy);
         shape.setAttribute('stroke', 'red');
         shape.setAttribute('stroke-width', 2);
         const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        arrow.setAttribute('points', `${sx - 4 * zoom},${sy - 20 * zoom} ${sx + 4 * zoom},${sy - 20 * zoom} ${sx},${sy - 25 * zoom}`);
+        arrow.setAttribute('points', `${sx - 4 * zoom},${sy - amt} ${sx + 4 * zoom},${sy - amt} ${sx},${sy - amt - 5 * zoom}`);
         arrow.setAttribute('fill', 'red');
         g.appendChild(arrow);
       } else if (el.type === 'Support') {
@@ -347,6 +407,17 @@ function addElement(type) {
       y2: base.y + (dir.y || 0),
       z2: base.z + (dir.z || 0),
     });
+  } else if (type === 'Plane') {
+    base.length = 40;
+    base.width = 40;
+  } else if (type === 'Solid') {
+    base.width = 30;
+    base.height = 30;
+    base.depth = 30;
+  } else if (type === 'Load') {
+    base.amount = 20;
+  } else if (type === 'Support') {
+    base.amount = 0;
   }
   elements.push(base);
   applySnapping(base);
@@ -366,11 +437,36 @@ function startDrag(ev) {
   const id = parseInt(ev.target.parentNode.dataset.id || ev.target.dataset.id, 10);
   const el = elements.find(e => e.id === id);
   if (!el) return;
+  const svgRect = document.getElementById('canvas').getBoundingClientRect();
+  const mx = ev.clientX - svgRect.left;
+  const my = ev.clientY - svgRect.top;
   dragId = id;
   selectedId = id;
   dragStartX = ev.clientX;
   dragStartY = ev.clientY;
   dragOrig = JSON.parse(JSON.stringify(el));
+  dragMode = 'body';
+  if (el.type === 'Member' || el.type === 'Cable') {
+    const p1 = screenCoords({ x: el.x, y: el.y, z: el.z });
+    const p2 = screenCoords({ x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z });
+    if (distanceScreen({ x: mx, y: my }, p1) < 8) dragMode = 'start';
+    else if (distanceScreen({ x: mx, y: my }, p2) < 8) dragMode = 'end';
+    else if (distanceToSegment2D({ x: mx, y: my }, p1, p2) < 6) dragMode = 'body';
+  } else if (el.type === 'Load') {
+    const base = screenCoords(el);
+    const tip = { x: base.x, y: base.y - (el.amount ?? 20) * zoom };
+    if (distanceScreen({ x: mx, y: my }, base) < 8) dragMode = 'base';
+    else if (distanceScreen({ x: mx, y: my }, tip) < 8) dragMode = 'tip';
+    else if (distanceToSegment2D({ x: mx, y: my }, base, tip) < 6) dragMode = 'body';
+  } else if (el.type === 'Plane' || el.type === 'Solid') {
+    const rect = el.type === 'Plane' ? planeScreenRect(el) : solidScreenRect(el);
+    const m = 6;
+    if (Math.abs(mx - rect.left) < m && my >= rect.top - m && my <= rect.bottom + m) dragMode = 'left';
+    else if (Math.abs(mx - rect.right) < m && my >= rect.top - m && my <= rect.bottom + m) dragMode = 'right';
+    else if (Math.abs(my - rect.top) < m && mx >= rect.left - m && mx <= rect.right + m) dragMode = 'top';
+    else if (Math.abs(my - rect.bottom) < m && mx >= rect.left - m && mx <= rect.right + m) dragMode = 'bottom';
+    else dragMode = 'body';
+  }
   document.addEventListener('mousemove', onDrag);
   document.addEventListener('mouseup', endDrag);
   ev.stopPropagation();
@@ -384,13 +480,66 @@ function onDrag(ev) {
   const dy = (ev.clientY - dragStartY) / zoom;
   const delta = unprojectDelta(dx, dy);
   if (el.type === 'Member' || el.type === 'Cable') {
-    ['x', 'y', 'z', 'x2', 'y2', 'z2'].forEach(k => {
-      el[k] = dragOrig[k] + (delta[k.slice(-1)] ?? delta[k] ?? 0);
-    });
+    if (dragMode === 'start') {
+      ['x', 'y', 'z'].forEach(k => { el[k] = dragOrig[k] + (delta[k] || 0); });
+    } else if (dragMode === 'end') {
+      ['x2', 'y2', 'z2'].forEach(k => { const a = k[0]; el[k] = dragOrig[k] + (delta[a] || 0); });
+    } else {
+      ['x', 'y', 'z', 'x2', 'y2', 'z2'].forEach(k => { const a = k[0]; el[k] = dragOrig[k] + (delta[a] || 0); });
+    }
+  } else if (el.type === 'Load') {
+    if (dragMode === 'tip') {
+      const dd = -(ev.clientY - dragStartY) / zoom;
+      el.amount = Math.max(1, dragOrig.amount + dd);
+    } else {
+      ['x', 'y', 'z'].forEach(k => { if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k]; });
+    }
+  } else if (el.type === 'Plane') {
+    const info = axisInfo(currentView);
+    const dh = dx;
+    const dv = dy;
+    const dhWorld = dh * info.h.sign;
+    const dvWorld = dv * info.v.sign;
+    if (dragMode === 'left') {
+      el.length = Math.max(1, dragOrig.length - dh);
+      el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
+    } else if (dragMode === 'right') {
+      el.length = Math.max(1, dragOrig.length + dh);
+      el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
+    } else if (dragMode === 'top') {
+      el.width = Math.max(1, dragOrig.width - dv);
+      el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
+    } else if (dragMode === 'bottom') {
+      el.width = Math.max(1, dragOrig.width + dv);
+      el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
+    } else {
+      ['x', 'y', 'z'].forEach(k => { if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k]; });
+    }
+  } else if (el.type === 'Solid') {
+    const info = axisInfo(currentView);
+    const dh = dx;
+    const dv = dy;
+    const dhWorld = dh * info.h.sign;
+    const dvWorld = dv * info.v.sign;
+    const hProp = axisDims[info.h.axis];
+    const vProp = axisDims[info.v.axis];
+    if (dragMode === 'left') {
+      el[hProp] = Math.max(1, dragOrig[hProp] - dh);
+      el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
+    } else if (dragMode === 'right') {
+      el[hProp] = Math.max(1, dragOrig[hProp] + dh);
+      el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
+    } else if (dragMode === 'top') {
+      el[vProp] = Math.max(1, dragOrig[vProp] - dv);
+      el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
+    } else if (dragMode === 'bottom') {
+      el[vProp] = Math.max(1, dragOrig[vProp] + dv);
+      el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
+    } else {
+      ['x', 'y', 'z'].forEach(k => { if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k]; });
+    }
   } else {
-    ['x', 'y', 'z'].forEach(k => {
-      if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k];
-    });
+    ['x', 'y', 'z'].forEach(k => { if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k]; });
   }
   render();
 }
@@ -402,6 +551,7 @@ function endDrag() {
   const el = elements.find(e => e.id === dragId);
   if (el) applySnapping(el);
   dragId = null;
+  dragMode = 'body';
   saveState();
   render();
 }
@@ -450,6 +600,15 @@ async function loadState() {
         obj.x2 = e.x2 ?? obj.x;
         obj.y2 = e.y2 ?? obj.y;
         obj.z2 = e.z2 ?? obj.z;
+      } else if (obj.type === 'Plane') {
+        obj.length = e.length ?? 40;
+        obj.width = e.width ?? 40;
+      } else if (obj.type === 'Solid') {
+        obj.width = e.width ?? 30;
+        obj.height = e.height ?? 30;
+        obj.depth = e.depth ?? 30;
+      } else if (obj.type === 'Load' || obj.type === 'Support') {
+        obj.amount = e.amount ?? (obj.type === 'Load' ? 20 : 0);
       }
       return obj;
     });
