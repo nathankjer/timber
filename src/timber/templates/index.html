@@ -139,11 +139,38 @@ function axisInfo(view) {
 
 const axisDims = { x: 'width', y: 'height', z: 'depth' };
 
+function planeCorners(el) {
+  const l = (el.length ?? 40) / 2;
+  const w = (el.width ?? 40) / 2;
+  const n = (el.normal || 'Z').toUpperCase();
+  if (n === 'X') {
+    return [
+      { x: el.x, y: el.y - l, z: el.z - w },
+      { x: el.x, y: el.y - l, z: el.z + w },
+      { x: el.x, y: el.y + l, z: el.z - w },
+      { x: el.x, y: el.y + l, z: el.z + w },
+    ];
+  } else if (n === 'Y') {
+    return [
+      { x: el.x - l, y: el.y, z: el.z - w },
+      { x: el.x - l, y: el.y, z: el.z + w },
+      { x: el.x + l, y: el.y, z: el.z - w },
+      { x: el.x + l, y: el.y, z: el.z + w },
+    ];
+  }
+  return [
+    { x: el.x - l, y: el.y - w, z: el.z },
+    { x: el.x - l, y: el.y + w, z: el.z },
+    { x: el.x + l, y: el.y - w, z: el.z },
+    { x: el.x + l, y: el.y + w, z: el.z },
+  ];
+}
+
 function planeScreenRect(el) {
-  const c = screenCoords(el);
-  const l = (el.length ?? 40) * zoom;
-  const w = (el.width ?? 40) * zoom;
-  return { left: c.x - l / 2, right: c.x + l / 2, top: c.y - w / 2, bottom: c.y + w / 2 };
+  const pts = planeCorners(el).map(screenCoords);
+  const xs = pts.map(p => p.x);
+  const ys = pts.map(p => p.y);
+  return { left: Math.min(...xs), right: Math.max(...xs), top: Math.min(...ys), bottom: Math.max(...ys) };
 }
 
 function solidScreenRect(el) {
@@ -169,14 +196,19 @@ function getSnapPoints(ignoreId) {
   elements.forEach(e => {
     if (e.id === ignoreId) return;
     if (e.type === 'Joint') pts.push({ x: e.x, y: e.y, z: e.z, kind: 'Joint' });
-    if (e.type === 'Support' || e.type === 'Load') pts.push({ x: e.x, y: e.y, z: e.z, kind: e.type });
+    if (e.type === 'Support') pts.push({ x: e.x, y: e.y, z: e.z, kind: e.type });
+    if (e.type === 'Load') {
+      pts.push({ x: e.x, y: e.y, z: e.z, kind: 'Load' });
+      pts.push({ x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z, kind: 'Load' });
+    }
     if (e.type === 'Member' || e.type === 'Cable') {
       pts.push({ x: e.x, y: e.y, z: e.z, kind: 'End' });
       pts.push({ x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z, kind: 'End' });
     }
     if (e.type === 'Plane') {
       const s = 20;
-      [-s, s].forEach(dx => [-s, s].forEach(dy => pts.push({ x: e.x + dx, y: e.y + dy, z: e.z, kind: 'PlaneCorner' })));
+      const corners = planeCorners({ ...e, length: s * 2, width: s * 2 });
+      corners.forEach(c => pts.push({ x: c.x, y: c.y, z: c.z, kind: 'PlaneCorner' }));
     }
     if (e.type === 'Solid') {
       const s = 15;
@@ -193,7 +225,7 @@ function getSnapLines(ignoreId) {
   const lines = [];
   elements.forEach(e => {
     if (e.id === ignoreId) return;
-    if (e.type === 'Member' || e.type === 'Cable') {
+    if (e.type === 'Member' || e.type === 'Cable' || e.type === 'Load') {
       lines.push({ p1: { x: e.x, y: e.y, z: e.z }, p2: { x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z } });
     }
   });
@@ -230,8 +262,16 @@ function applySnapping(el) {
     }
   }
 
-  if (el.type === 'Joint' || el.type === 'Support' || el.type === 'Load') {
+  if (el.type === 'Joint' || el.type === 'Support') {
     snapObj(el, false);
+  } else if (el.type === 'Load') {
+    const base = { x: el.x, y: el.y, z: el.z };
+    const tip = { x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z };
+    snapObj(base, false);
+    snapObj(tip, false);
+    el.x = base.x; el.y = base.y; el.z = base.z;
+    el.x2 = tip.x; el.y2 = tip.y; el.z2 = tip.z;
+    el.amount = Math.hypot(el.x2 - el.x, el.y2 - el.y, el.z2 - el.z);
   } else if (el.type === 'Member' || el.type === 'Cable') {
     const p1 = { x: el.x, y: el.y, z: el.z };
     const p2 = { x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z };
@@ -267,13 +307,17 @@ function renderProperties() {
       const form = document.createElement('div');
       form.innerHTML = `<div class="mb-2">Type: <strong>${el.type}</strong></div>`;
       ['x', 'y', 'z'].forEach(p => addNumberInput(form, p, p, el));
-      if (el.type === 'Member' || el.type === 'Cable') {
+      if (el.type === 'Member' || el.type === 'Cable' || el.type === 'Load') {
         ['x2', 'y2', 'z2'].forEach(p => addNumberInput(form, p, p, el));
-      } else if (el.type === 'Plane') {
+      }
+      if (el.type === 'Plane') {
         ['length', 'width'].forEach(p => addNumberInput(form, p, p, el));
       } else if (el.type === 'Solid') {
         ['width', 'height', 'depth'].forEach(p => addNumberInput(form, p, p, el));
-      } else if (el.type === 'Load' || el.type === 'Support') {
+      } else if (el.type === 'Support') {
+        const unit = globalProps.units === 'metric' ? 'N' : 'lb';
+        addNumberInput(form, `amount (${unit})`, 'amount', el);
+      } else if (el.type === 'Load') {
         const unit = globalProps.units === 'metric' ? 'N' : 'lb';
         addNumberInput(form, `amount (${unit})`, 'amount', el);
       }
@@ -337,13 +381,13 @@ function render() {
         shape.setAttribute('r', 4);
         shape.setAttribute('fill', 'blue');
       } else if (el.type === 'Plane') {
-        shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        const l = (el.length ?? 40) * zoom;
-        const w = (el.width ?? 40) * zoom;
-        shape.setAttribute('x', sx - l / 2);
-        shape.setAttribute('y', sy - w / 2);
-        shape.setAttribute('width', l);
-        shape.setAttribute('height', w);
+        if (el.normal && el.normal !== currentView[1]) return;
+        const pts = planeCorners(el).map(p => {
+          const pr = projectPoint(p);
+          return [cx + (pr.x || 0) * zoom, cy + (pr.y || 0) * zoom];
+        });
+        shape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        shape.setAttribute('points', pts.map(pt => pt.join(',')).join(' '));
         shape.setAttribute('fill', 'rgba(0,0,255,0.2)');
         shape.setAttribute('stroke', 'blue');
       } else if (el.type === 'Solid') {
@@ -358,21 +402,36 @@ function render() {
         shape.setAttribute('fill', 'rgba(0,0,255,0.4)');
         shape.setAttribute('stroke', 'blue');
       } else if (el.type === 'Load') {
+        const tip = projectPoint({ x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z });
+        const sx1 = cx + (tip.x || 0) * zoom;
+        const sy1 = cy + (tip.y || 0) * zoom;
+        const sx2 = sx;
+        const sy2 = sy;
         shape = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        const amt = (el.amount ?? 20) * zoom;
-        shape.setAttribute('x1', sx);
-        shape.setAttribute('y1', sy - amt);
-        shape.setAttribute('x2', sx);
-        shape.setAttribute('y2', sy);
+        shape.setAttribute('x1', sx1);
+        shape.setAttribute('y1', sy1);
+        shape.setAttribute('x2', sx2);
+        shape.setAttribute('y2', sy2);
         shape.setAttribute('stroke', 'red');
         shape.setAttribute('stroke-width', 2);
         const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        arrow.setAttribute('points', `${sx - 4 * zoom},${sy - amt} ${sx + 4 * zoom},${sy - amt} ${sx},${sy - amt - 5 * zoom}`);
+        const dx = sx2 - sx1;
+        const dy = sy2 - sy1;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len;
+        const ny = dx / len;
+        const b1x = sx1 + nx * 4 * zoom;
+        const b1y = sy1 + ny * 4 * zoom;
+        const b2x = sx1 - nx * 4 * zoom;
+        const b2y = sy1 - ny * 4 * zoom;
+        const tx = sx1 + (dx / len) * 5 * zoom;
+        const ty = sy1 + (dy / len) * 5 * zoom;
+        arrow.setAttribute('points', `${b1x},${b1y} ${b2x},${b2y} ${tx},${ty}`);
         arrow.setAttribute('fill', 'red');
         g.appendChild(arrow);
       } else if (el.type === 'Support') {
         shape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        shape.setAttribute('points', `${sx - 6 * zoom},${sy} ${sx + 6 * zoom},${sy} ${sx},${sy - 10 * zoom}`);
+        shape.setAttribute('points', `${sx - 6 * zoom},${sy + 10 * zoom} ${sx + 6 * zoom},${sy + 10 * zoom} ${sx},${sy}`);
         shape.setAttribute('fill', 'green');
       } else {
         shape = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
@@ -410,12 +469,19 @@ function addElement(type) {
   } else if (type === 'Plane') {
     base.length = 40;
     base.width = 40;
+    base.normal = currentView[1];
   } else if (type === 'Solid') {
     base.width = 30;
     base.height = 30;
     base.depth = 30;
   } else if (type === 'Load') {
-    base.amount = 20;
+    const dir = unprojectDelta(0, -20);
+    Object.assign(base, {
+      x2: base.x + (dir.x || 0),
+      y2: base.y + (dir.y || 0),
+      z2: base.z + (dir.z || 0),
+      amount: 20,
+    });
   } else if (type === 'Support') {
     base.amount = 0;
   }
@@ -453,11 +519,11 @@ function startDrag(ev) {
     else if (distanceScreen({ x: mx, y: my }, p2) < 8) dragMode = 'end';
     else if (distanceToSegment2D({ x: mx, y: my }, p1, p2) < 6) dragMode = 'body';
   } else if (el.type === 'Load') {
-    const base = screenCoords(el);
-    const tip = { x: base.x, y: base.y - (el.amount ?? 20) * zoom };
+    const base = screenCoords({ x: el.x, y: el.y, z: el.z });
+    const tipSC = screenCoords({ x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z });
     if (distanceScreen({ x: mx, y: my }, base) < 8) dragMode = 'base';
-    else if (distanceScreen({ x: mx, y: my }, tip) < 8) dragMode = 'tip';
-    else if (distanceToSegment2D({ x: mx, y: my }, base, tip) < 6) dragMode = 'body';
+    else if (distanceScreen({ x: mx, y: my }, tipSC) < 8) dragMode = 'tip';
+    else if (distanceToSegment2D({ x: mx, y: my }, base, tipSC) < 6) dragMode = 'body';
   } else if (el.type === 'Plane' || el.type === 'Solid') {
     const rect = el.type === 'Plane' ? planeScreenRect(el) : solidScreenRect(el);
     const m = 6;
@@ -488,12 +554,15 @@ function onDrag(ev) {
       ['x', 'y', 'z', 'x2', 'y2', 'z2'].forEach(k => { const a = k[0]; el[k] = dragOrig[k] + (delta[a] || 0); });
     }
   } else if (el.type === 'Load') {
-    if (dragMode === 'tip') {
-      const dd = -(ev.clientY - dragStartY) / zoom;
-      el.amount = Math.max(1, dragOrig.amount + dd);
-    } else {
+    if (dragMode === 'base') {
       ['x', 'y', 'z'].forEach(k => { if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k]; });
+    } else if (dragMode === 'tip') {
+      ['x2', 'y2', 'z2'].forEach(k => { const a = k[0]; el[k] = dragOrig[k] + delta[a]; });
+    } else {
+      ['x', 'y', 'z', 'x2', 'y2', 'z2'].forEach(k => { const a = k[0]; el[k] = dragOrig[k] + delta[a]; });
     }
+    el.amount = Math.hypot((el.x2 ?? el.x) - el.x, (el.y2 ?? el.y) - el.y, (el.z2 ?? el.z) - el.z);
+    el.amount = Math.hypot((el.x2 ?? el.x) - el.x, (el.y2 ?? el.y) - el.y, (el.z2 ?? el.z) - el.z);
   } else if (el.type === 'Plane') {
     const info = axisInfo(currentView);
     const dh = dx;
@@ -603,12 +672,18 @@ async function loadState() {
       } else if (obj.type === 'Plane') {
         obj.length = e.length ?? 40;
         obj.width = e.width ?? 40;
+        obj.normal = e.normal ?? currentView[1];
       } else if (obj.type === 'Solid') {
         obj.width = e.width ?? 30;
         obj.height = e.height ?? 30;
         obj.depth = e.depth ?? 30;
-      } else if (obj.type === 'Load' || obj.type === 'Support') {
-        obj.amount = e.amount ?? (obj.type === 'Load' ? 20 : 0);
+      } else if (obj.type === 'Load') {
+        obj.x2 = e.x2 ?? obj.x;
+        obj.y2 = e.y2 ?? obj.y;
+        obj.z2 = e.z2 ?? obj.z;
+        obj.amount = Math.hypot(obj.x2 - obj.x, obj.y2 - obj.y, obj.z2 - obj.z);
+      } else if (obj.type === 'Support') {
+        obj.amount = e.amount ?? 0;
       }
       return obj;
     });
