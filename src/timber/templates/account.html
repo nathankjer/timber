@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block title %}My Account{% endblock %}
+{% block content %}
+<div class="container mt-5" style="max-width: 500px;">
+  <h1 class="mb-4">My Account</h1>
+  <form method="post">
+    <div class="mb-3">
+      <label for="name" class="form-label">Name</label>
+      <input type="text" class="form-control" id="name" name="name" value="{{ current_user.name }}" required>
+    </div>
+    <div class="mb-3">
+      <label for="email" class="form-label">Email</label>
+      <input type="email" class="form-control" id="email" value="{{ current_user.email }}" disabled>
+    </div>
+    <div class="mb-3">
+      <a href="{{ url_for('auth.password') }}">Update password</a>
+    </div>
+    <button type="submit" class="btn btn-primary">Submit</button>
+  </form>
+</div>
+{% endblock %}

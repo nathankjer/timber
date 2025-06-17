@@ -1,0 +1,26 @@
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="{{ url_for('index') }}">Timber</a>
+    <div class="d-flex ms-auto">
+      {% if current_user.is_authenticated %}
+      <div class="dropdown">
+        <a class="btn btn-link dropdown-toggle" href="#" id="accountMenu" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+          <i class="bi bi-person-fill"></i>
+        </a>
+        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="accountMenu">
+          <li><a class="dropdown-item" href="{{ url_for('auth.account') }}">My Account</a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li>
+            <form action="{{ url_for('auth.logout') }}" method="get" class="px-3">
+              <button type="submit" class="btn btn-outline-danger w-100">Log Out</button>
+            </form>
+          </li>
+        </ul>
+      </div>
+      {% else %}
+      <a href="{{ url_for('auth.register') }}" class="btn btn-primary me-2">Sign Up</a>
+      <a href="{{ url_for('auth.login') }}" class="nav-link">Log In</a>
+      {% endif %}
+    </div>
+  </div>
+</nav>

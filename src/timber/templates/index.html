@@ -1,13 +1,20 @@
 {% extends 'base.html' %}
 {% block title %}Home{% endblock %}
 {% block content %}
-<div class="container mt-5">
-  <h1>Welcome to Timber</h1>
+<div class="container-fluid mt-4">
   {% if current_user.is_authenticated %}
-    <p class="lead">Logged in as {{ current_user.email }}.</p>
-    <a href="{{ url_for('auth.logout') }}" class="btn btn-secondary">Logout</a>
+  <div class="row">
+    <div class="col-md-3" id="properties-pane">
+      <h2>Properties</h2>
+    </div>
+    <div class="col-md-9" id="canvas-pane">
+      <h2>Canvas</h2>
+    </div>
+  </div>
   {% else %}
-    <p class="lead">Please <a href="{{ url_for('auth.login') }}">log in</a> or <a href="{{ url_for('auth.register') }}">register</a>.</p>
+  <div class="text-center">
+    <p class="lead">Please <a href="{{ url_for('auth.login') }}">log in</a> or <a href="{{ url_for('auth.register') }}">sign up</a> to continue.</p>
+  </div>
   {% endif %}
 </div>
 {% endblock %}

@@ -12,13 +12,14 @@ class User(db.Model, UserMixin):  # type: ignore
     __tablename__ = "users"
 
     id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(128), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     @classmethod
-    def create(cls, email: str, password: str) -> "User":
-        user = cls(email=email)
+    def create(cls, email: str, name: str, password: str) -> "User":
+        user = cls(email=email, name=name)
         user.set_password(password)
         db.session.add(user)
         try:
