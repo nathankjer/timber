@@ -146,23 +146,23 @@ function planeCorners(el) {
   if (n === 'X') {
     return [
       { x: el.x, y: el.y - l, z: el.z - w },
-      { x: el.x, y: el.y - l, z: el.z + w },
       { x: el.x, y: el.y + l, z: el.z - w },
       { x: el.x, y: el.y + l, z: el.z + w },
+      { x: el.x, y: el.y - l, z: el.z + w },
     ];
   } else if (n === 'Y') {
     return [
       { x: el.x - l, y: el.y, z: el.z - w },
-      { x: el.x - l, y: el.y, z: el.z + w },
       { x: el.x + l, y: el.y, z: el.z - w },
       { x: el.x + l, y: el.y, z: el.z + w },
+      { x: el.x - l, y: el.y, z: el.z + w },
     ];
   }
   return [
     { x: el.x - l, y: el.y - w, z: el.z },
-    { x: el.x - l, y: el.y + w, z: el.z },
     { x: el.x + l, y: el.y - w, z: el.z },
     { x: el.x + l, y: el.y + w, z: el.z },
+    { x: el.x - l, y: el.y + w, z: el.z },
   ];
 }
 
