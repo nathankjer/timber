@@ -5,7 +5,7 @@
   {% if current_user.is_authenticated %}
   <div class="row">
     <div class="col-md-9" id="canvas-pane">
-      <div id="canvas" style="position:relative; border:1px solid #ccc; height:400px;"></div>
+      <svg id="canvas" style="border:1px solid #ccc; width:100%; height:400px;"></svg>
       <div class="mt-2" id="canvas-tools">
         <select id="element-type" class="form-select form-select-sm d-inline w-auto me-2">
           <option value="Joint">Joint</option>
@@ -46,69 +46,186 @@ const sheetId = document.querySelector('[data-sheet-id]').dataset.sheetId;
 let elements = [];
 let selectedId = null;
 let dragId = null;
-let dragOffsetX = 0;
-let dragOffsetY = 0;
+let dragStartX = 0;
+let dragStartY = 0;
+let dragOrig = null;
 let currentView = '+X';
+let zoom = 1;
+const globalProps = { g: 9.81, units: 'metric' };
 
-function render() {
-  const canvas = document.getElementById('canvas');
-  canvas.innerHTML = '';
-  document.getElementById('current-view').textContent = currentView;
-  elements.forEach(el => {
-    const div = document.createElement('div');
-    div.className = 'element border bg-primary text-white d-flex justify-content-center align-items-center';
-    div.style.position = 'absolute';
-    div.style.width = '16px';
-    div.style.height = '16px';
-    div.style.left = `${el.x}px`;
-    div.style.top = `${el.y}px`;
-    div.style.fontSize = '10px';
-    div.style.cursor = 'move';
-    div.dataset.id = el.id;
-    div.textContent = el.type ? el.type.charAt(0) : 'J';
-    if (el.id === selectedId) div.classList.add('border-warning');
-    div.addEventListener('mousedown', startDrag);
-    div.addEventListener('click', e => {
-      e.stopPropagation();
-      selectElement(el.id);
-    });
-    canvas.appendChild(div);
+function projectPoint(p) {
+  switch (currentView) {
+    case '+X':
+      return { x: p.y, y: -p.z };
+    case '-X':
+      return { x: -p.y, y: -p.z };
+    case '+Y':
+      return { x: p.x, y: -p.z };
+    case '-Y':
+      return { x: -p.x, y: -p.z };
+    case '+Z':
+      return { x: p.x, y: -p.y };
+    case '-Z':
+      return { x: -p.x, y: -p.y };
+  }
+}
+
+function unprojectDelta(dx, dy) {
+  switch (currentView) {
+    case '+X':
+      return { y: dx, z: -dy };
+    case '-X':
+      return { y: -dx, z: -dy };
+    case '+Y':
+      return { x: dx, z: -dy };
+    case '-Y':
+      return { x: -dx, z: -dy };
+    case '+Z':
+      return { x: dx, y: -dy };
+    case '-Z':
+      return { x: -dx, y: -dy };
+  }
+}
+
+function addNumberInput(container, label, prop, el) {
+  const div = document.createElement('div');
+  div.className = 'mb-2';
+  div.innerHTML = `<label class='form-label'>${label}</label><input id='prop-${prop}' class='form-control form-control-sm' type='number' value='${el[prop] ?? 0}'>`;
+  const input = div.querySelector('input');
+  input.addEventListener('input', ev => {
+    el[prop] = parseFloat(ev.target.value);
+    render();
+    saveState();
+  });
+  container.appendChild(div);
+}
+
+function renderProperties() {
+  const pane = document.getElementById('props-content');
+  pane.innerHTML = '';
+  if (selectedId !== null) {
+    const el = elements.find(e => e.id === selectedId);
+    if (el) {
+      const form = document.createElement('div');
+      form.innerHTML = `<div class="mb-2">Type: <strong>${el.type}</strong></div>`;
+      ['x', 'y', 'z'].forEach(p => addNumberInput(form, p, p, el));
+      if (el.type === 'Member' || el.type === 'Cable') {
+        ['x2', 'y2', 'z2'].forEach(p => addNumberInput(form, p, p, el));
+      }
+      pane.appendChild(form);
+      document.getElementById('delete-btn').disabled = false;
+    }
+  } else {
+    document.getElementById('delete-btn').disabled = true;
+  }
+
+  const globalDiv = document.createElement('div');
+  globalDiv.innerHTML = `<hr><h6>Global</h6>
+    <div class='mb-2'><label class='form-label'>g</label><input id='global-g' class='form-control form-control-sm' type='number' value='${globalProps.g}' readonly></div>
+    <div class='mb-2'><label class='form-label'>Units</label><select id='global-units' class='form-select form-select-sm'>
+      <option value='metric'>Metric</option><option value='imperial'>Imperial</option></select></div>`;
+  pane.appendChild(globalDiv);
+  const sel = globalDiv.querySelector('#global-units');
+  sel.value = globalProps.units;
+  sel.addEventListener('change', ev => {
+    globalProps.units = ev.target.value;
+    globalProps.g = globalProps.units === 'metric' ? 9.81 : 32.19;
+    renderProperties();
   });
 }
 
-function selectElement(id) {
-  selectedId = id;
-  const el = elements.find(e => e.id === id);
-  const pane = document.getElementById('props-content');
-  pane.innerHTML = '';
-  if (!el) return;
-  const form = document.createElement('div');
-  form.innerHTML = `<div class="mb-2">Type: <strong>${el.type}</strong></div>
-    <div class="mb-2"><label class='form-label'>x</label><input id='prop-x' class='form-control form-control-sm' type='number' value='${el.x}'></div>
-    <div class="mb-2"><label class='form-label'>y</label><input id='prop-y' class='form-control form-control-sm' type='number' value='${el.y}'></div>`;
-  pane.appendChild(form);
-  document.getElementById('delete-btn').disabled = false;
-  document.getElementById('prop-x').addEventListener('input', ev => {
-    el.x = parseFloat(ev.target.value);
-    render();
-    saveState();
+function render() {
+  const svg = document.getElementById('canvas');
+  svg.innerHTML = '';
+  const rect = svg.getBoundingClientRect();
+  const cx = rect.width / 2;
+  const cy = rect.height / 2;
+  document.getElementById('current-view').textContent = currentView;
+
+  elements.forEach(el => {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.dataset.id = el.id;
+    g.style.cursor = 'move';
+    g.addEventListener('mousedown', startDrag);
+    g.addEventListener('click', e => { e.stopPropagation(); selectElement(el.id); });
+
+    let shape;
+    if (el.type === 'Member' || el.type === 'Cable') {
+      const p1 = projectPoint({ x: el.x, y: el.y, z: el.z });
+      const p2 = projectPoint({ x: el.x2 ?? el.x + 40, y: el.y2 ?? el.y, z: el.z2 ?? el.z });
+      shape = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      shape.setAttribute('x1', cx + p1.x * zoom);
+      shape.setAttribute('y1', cy + p1.y * zoom);
+      shape.setAttribute('x2', cx + p2.x * zoom);
+      shape.setAttribute('y2', cy + p2.y * zoom);
+      shape.setAttribute('stroke', 'blue');
+      shape.setAttribute('stroke-width', 2);
+      if (el.type === 'Cable') shape.setAttribute('stroke-dasharray', '4 2');
+    } else {
+      const p = projectPoint({ x: el.x, y: el.y, z: el.z });
+      const sx = cx + p.x * zoom;
+      const sy = cy + p.y * zoom;
+      if (el.type === 'Joint') {
+        shape = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        shape.setAttribute('cx', sx);
+        shape.setAttribute('cy', sy);
+        shape.setAttribute('r', 4);
+        shape.setAttribute('fill', 'blue');
+      } else if (el.type === 'Plane') {
+        shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        shape.setAttribute('x', sx - 20 * zoom);
+        shape.setAttribute('y', sy - 20 * zoom);
+        shape.setAttribute('width', 40 * zoom);
+        shape.setAttribute('height', 40 * zoom);
+        shape.setAttribute('fill', 'rgba(0,0,255,0.2)');
+        shape.setAttribute('stroke', 'blue');
+      } else if (el.type === 'Solid') {
+        shape = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        shape.setAttribute('x', sx - 15 * zoom);
+        shape.setAttribute('y', sy - 15 * zoom);
+        shape.setAttribute('width', 30 * zoom);
+        shape.setAttribute('height', 30 * zoom);
+        shape.setAttribute('fill', 'rgba(0,0,255,0.4)');
+        shape.setAttribute('stroke', 'blue');
+      } else if (el.type === 'Load') {
+        shape = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        shape.setAttribute('x1', sx);
+        shape.setAttribute('y1', sy - 20 * zoom);
+        shape.setAttribute('x2', sx);
+        shape.setAttribute('y2', sy);
+        shape.setAttribute('stroke', 'red');
+        shape.setAttribute('stroke-width', 2);
+        const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        arrow.setAttribute('points', `${sx - 4 * zoom},${sy - 20 * zoom} ${sx + 4 * zoom},${sy - 20 * zoom} ${sx},${sy - 25 * zoom}`);
+        arrow.setAttribute('fill', 'red');
+        g.appendChild(arrow);
+      } else if (el.type === 'Support') {
+        shape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        shape.setAttribute('points', `${sx - 6 * zoom},${sy} ${sx + 6 * zoom},${sy} ${sx},${sy - 10 * zoom}`);
+        shape.setAttribute('fill', 'green');
+      } else {
+        shape = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        shape.setAttribute('cx', sx);
+        shape.setAttribute('cy', sy);
+        shape.setAttribute('r', 4);
+        shape.setAttribute('fill', 'blue');
+      }
+    }
+    if (shape) g.appendChild(shape);
+    if (el.id === selectedId) g.setAttribute('stroke', 'orange');
+    svg.appendChild(g);
   });
-  document.getElementById('prop-y').addEventListener('input', ev => {
-    el.y = parseFloat(ev.target.value);
-    render();
-    saveState();
-  });
-  render();
+
+  renderProperties();
 }
 
 function addElement(type) {
-  const defaultX = 50;
-  const defaultY = 50;
-  if (elements.some(e => e.type === type && e.x === defaultX && e.y === defaultY)) {
-    return;
-  }
   const id = Date.now();
-  elements.push({id, type, x: defaultX, y: defaultY});
+  const base = { id, type, x: 0, y: 0, z: 0 };
+  if (type === 'Member' || type === 'Cable') {
+    Object.assign(base, { x2: 40, y2: 0, z2: 0 });
+  }
+  elements.push(base);
   saveState();
   render();
 }
@@ -117,20 +234,19 @@ function deleteElement() {
   if (selectedId === null) return;
   elements = elements.filter(e => e.id !== selectedId);
   selectedId = null;
-  document.getElementById('props-content').innerHTML = '';
-  document.getElementById('delete-btn').disabled = true;
   saveState();
   render();
 }
 
 function startDrag(ev) {
-  const id = parseInt(ev.target.dataset.id, 10);
+  const id = parseInt(ev.target.parentNode.dataset.id || ev.target.dataset.id, 10);
   const el = elements.find(e => e.id === id);
   if (!el) return;
   dragId = id;
   selectedId = id;
-  dragOffsetX = ev.clientX - el.x;
-  dragOffsetY = ev.clientY - el.y;
+  dragStartX = ev.clientX;
+  dragStartY = ev.clientY;
+  dragOrig = JSON.parse(JSON.stringify(el));
   document.addEventListener('mousemove', onDrag);
   document.addEventListener('mouseup', endDrag);
   ev.stopPropagation();
@@ -140,8 +256,18 @@ function onDrag(ev) {
   if (dragId === null) return;
   const el = elements.find(e => e.id === dragId);
   if (!el) return;
-  el.x = ev.clientX - dragOffsetX;
-  el.y = ev.clientY - dragOffsetY;
+  const dx = (ev.clientX - dragStartX) / zoom;
+  const dy = (ev.clientY - dragStartY) / zoom;
+  const delta = unprojectDelta(dx, dy);
+  if (el.type === 'Member' || el.type === 'Cable') {
+    ['x', 'y', 'z', 'x2', 'y2', 'z2'].forEach(k => {
+      el[k] = dragOrig[k] + (delta[k.slice(-1)] ?? delta[k] ?? 0);
+    });
+  } else {
+    ['x', 'y', 'z'].forEach(k => {
+      if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k];
+    });
+  }
   render();
 }
 
@@ -156,8 +282,8 @@ function endDrag() {
 async function saveState() {
   await fetch('/sheet/action', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({sheet_id: sheetId, elements})
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sheet_id: sheetId, elements })
   });
 }
 
@@ -165,7 +291,7 @@ async function loadState() {
   const resp = await fetch(`/sheet/${sheetId}`);
   if (resp.ok) {
     const data = await resp.json();
-    elements = (data.elements || []).map(e => ({type: e.type || 'Joint', ...e}));
+    elements = (data.elements || []).map(e => ({ type: e.type || 'Joint', ...e }));
     render();
   }
 }
@@ -177,8 +303,11 @@ document.getElementById('add-btn').addEventListener('click', () => {
 document.getElementById('delete-btn').addEventListener('click', deleteElement);
 document.getElementById('canvas').addEventListener('click', () => {
   selectedId = null;
-  document.getElementById('props-content').innerHTML = '';
-  document.getElementById('delete-btn').disabled = true;
+  render();
+});
+document.getElementById('canvas').addEventListener('wheel', ev => {
+  ev.preventDefault();
+  zoom *= ev.deltaY < 0 ? 1.1 : 0.9;
   render();
 });
 
