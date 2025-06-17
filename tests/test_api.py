@@ -1,9 +1,26 @@
-import sys
 import math
-sys.path.append('src')
+import sys
+
+sys.path.append("src")
 
 from app import create_app
-from timber import Joint, Member, Load, Support, Model, solve
+from config import DevelopmentConfig
+from timber import Joint, Load, Member, Model, Support, solve
+from timber.extensions import db
+from timber.models import User
+
+
+class TestConfig(DevelopmentConfig):
+    TESTING = True
+    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    WTF_CSRF_ENABLED = False
+
+
+def create_test_app():
+    app = create_app(TestConfig)
+    with app.app_context():
+        db.create_all()
+    return app
 
 
 def test_solve_endpoint_returns_results():
@@ -30,3 +47,30 @@ def test_solve_endpoint_returns_results():
         data = resp.get_json()
         dy = float(data["displacements"]["1"][1])
         assert math.isclose(dy, expected.displacements[1][1], rel_tol=1e-9)
+
+
+def test_sheet_rename():
+    app = create_test_app()
+    with app.app_context():
+        client = app.test_client()
+        # register and login
+        client.post(
+            "/auth/register",
+            data={
+                "name": "User",
+                "email": "user@example.com",
+                "password": "secret",
+                "confirm_password": "secret",
+            },
+            follow_redirects=True,
+        )
+        client.post(
+            "/auth/login",
+            data={"email": "user@example.com", "password": "secret"},
+            follow_redirects=True,
+        )
+        resp = client.post("/sheet", json={"name": "Old"})
+        sheet_id = resp.get_json()["id"]
+        resp = client.put(f"/sheet/{sheet_id}", json={"name": "New"})
+        assert resp.status_code == 200
+        assert resp.get_json()["name"] == "New"
