@@ -4,6 +4,7 @@ import os
 import sys
 
 from flask import Flask, jsonify, render_template, request
+from flask_login import current_user, login_required
 
 from timber import Joint, Load, Member, Model, Support, solve
 from timber.extensions import bcrypt, db, login_manager, migrate
@@ -19,9 +20,7 @@ def create_app(config_object: str | None = None) -> Flask:
     app = Flask(__name__, template_folder=template_root)
 
     # --- Configuration ------------------------------------------------
-    config_object = config_object or os.environ.get(
-        "FLASK_CONFIG", "config.DevelopmentConfig"
-    )
+    config_object = config_object or os.environ.get("FLASK_CONFIG", "config.DevelopmentConfig")
 
     if isinstance(config_object, str):
         sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -39,17 +38,27 @@ def create_app(config_object: str | None = None) -> Flask:
     login_manager.login_view = "auth.login"
 
     from timber.auth import auth_bp
-    from timber.models import User
+    from timber.sheet import sheet_bp
+    from timber.models import User, Sheet
 
     @login_manager.user_loader
     def load_user(user_id: str) -> User | None:
         return User.query.get(int(user_id))
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(sheet_bp)
 
     @app.get("/")
     def index():
-        return render_template("index.html")
+        sheet_id = None
+        if current_user.is_authenticated:
+            sheet = Sheet.query.filter_by(user_id=current_user.id).first()
+            if sheet is None:
+                sheet = Sheet(name="Untitled", user_id=current_user.id)
+                db.session.add(sheet)
+                db.session.commit()
+            sheet_id = sheet.id
+        return render_template("index.html", sheet_id=sheet_id)
 
     # --- Routes -------------------------------------------------------
     @app.post("/solve")
@@ -76,9 +85,7 @@ def create_app(config_object: str | None = None) -> Flask:
         res = solve(model)
         return jsonify(
             {
-                "displacements": {
-                    str(k): list(v) for k, v in res.displacements.items()
-                },
+                "displacements": {str(k): list(v) for k, v in res.displacements.items()},
                 "reactions": {str(k): list(v) for k, v in res.reactions.items()},
             }
         )
