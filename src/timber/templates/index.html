@@ -415,8 +415,8 @@ function render() {
         shape.setAttribute('stroke', 'red');
         shape.setAttribute('stroke-width', 2);
         const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        const dx = sx2 - sx1;
-        const dy = sy2 - sy1;
+        const dx = sx1 - sx2;
+        const dy = sy1 - sy2;
         const len = Math.hypot(dx, dy) || 1;
         const nx = -dy / len;
         const ny = dx / len;
