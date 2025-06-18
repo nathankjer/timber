@@ -60,6 +60,7 @@ const code = fs.readFileSync(
   'utf8'
 );
 
-// Run in the *current* context (globalThis)
-// so all top-level bindings go to globalThis.
-vm.runInThisContext(code, { filename: 'index.js' });
+// createContext + runInContext ensures our code sees
+// the real `document`, `fetch`, `globalThis`, etc.
+vm.createContext(global);
+vm.runInContext(code, global, { filename: 'index.js' });
