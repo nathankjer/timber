@@ -396,7 +396,7 @@ function addNumberInput(container, label, prop, el) {
   input.addEventListener('input', ev => {
     const v = parseFloat(ev.target.value);
     el[prop] = Number.isFinite(v) ? v : 0;
-    render();
+    render(false);
     saveState();
   });
   container.appendChild(div);
@@ -444,20 +444,32 @@ function renderProperties() {
 
   const globalDiv = document.createElement('div');
   globalDiv.innerHTML = `<hr><h6>Global</h6>
-    <div class='mb-2'><label class='form-label'>g</label><input id='global-g' class='form-control form-control-sm' type='number' value='${globalProps.g}' readonly></div>
+    <div class='mb-2'><label class='form-label'>g</label><input id='global-g' class='form-control form-control-sm' type='number' value='${globalProps.g}'></div>
     <div class='mb-2'><label class='form-label'>Units</label><select id='global-units' class='form-select form-select-sm'>
       <option value='metric'>Metric</option><option value='imperial'>Imperial</option></select></div>`;
   pane.appendChild(globalDiv);
+  const gInput = globalDiv.querySelector('#global-g');
+  gInput.addEventListener('input', ev => {
+    const v = parseFloat(ev.target.value);
+    globalProps.g = Number.isFinite(v) ? v : 0;
+  });
   const sel = globalDiv.querySelector('#global-units');
   sel.value = globalProps.units;
   sel.addEventListener('change', ev => {
+    const old = globalProps.units;
     globalProps.units = ev.target.value;
-    globalProps.g = globalProps.units === 'metric' ? 9.81 : 32.19;
+    if (old !== globalProps.units) {
+      if (globalProps.units === 'metric') {
+        globalProps.g /= 3.28084;
+      } else {
+        globalProps.g *= 3.28084;
+      }
+    }
     renderProperties();
   });
 }
 
-function render() {
+function render(updateProps = true) {
   const svg = document.getElementById('canvas');
   svg.innerHTML = '';
   const rect = svg.getBoundingClientRect();
@@ -560,7 +572,9 @@ function render() {
     svg.appendChild(g);
   });
 
-  renderProperties();
+  if (updateProps) {
+    renderProperties();
+  }
 }
 
 function addElement(type) {
