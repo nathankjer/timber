@@ -916,6 +916,7 @@ function buildModel() {
 
 async function solveModel() {
   const payload = buildModel();
+  console.log('Solving model:', payload);
   const resp = await fetch('/solve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
