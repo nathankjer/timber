@@ -87,18 +87,15 @@ def _transformation(c: float, s: float) -> np.ndarray:
     )
 
 
-def solve(model: Model) -> Results:
-    """Solve for nodal displacements and reactions."""
+def _assemble_matrices(model: Model) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Build global stiffness and load matrices with boundary conditions."""
     n_joints = len(model.joints)
     dof = n_joints * 3
     K_full = np.zeros((dof, dof))
     F_ext = np.zeros(dof)
 
-    # Assemble global load vector
     for load in model.loads:
         idx = load.joint * 3
-        # Incoming data may contain null values which become ``None`` when
-        # parsed from JSON.  Treat these as zeros so the solver does not crash.
         fx = 0.0 if load.fx is None else float(load.fx)
         fy = 0.0 if load.fy is None else float(load.fy)
         mz = 0.0 if load.mz is None else float(load.mz)
@@ -106,7 +103,6 @@ def solve(model: Model) -> Results:
         F_ext[idx + 1] += fy
         F_ext[idx + 2] += mz
 
-    # Assemble global stiffness matrix
     for m in model.members:
         j1 = model.joints[m.start]
         j2 = model.joints[m.end]
@@ -128,7 +124,6 @@ def solve(model: Model) -> Results:
     K = K_full.copy()
     F = F_ext.copy()
 
-    # Apply supports (boundary conditions)
     for sup in model.supports:
         base = sup.joint * 3
         if sup.ux:
@@ -149,6 +144,15 @@ def solve(model: Model) -> Results:
             K[idx, idx] = 1
             F[idx] = 0
 
+    return K_full, F_ext, K, F
+
+
+def solve(model: Model) -> Results:
+    """Solve for nodal displacements and reactions."""
+    K_full, F_ext, K, F = _assemble_matrices(model)
+    n_joints = len(model.joints)
+    dof = n_joints * 3
+
     # Solve
     try:
         d = np.linalg.solve(K, F)
@@ -164,3 +168,48 @@ def solve(model: Model) -> Results:
         reactions[i] = (reactions_vec[i * 3], reactions_vec[i * 3 + 1], reactions_vec[i * 3 + 2])
 
     return Results(displacements=displacements, reactions=reactions)
+
+
+def solve_with_diagnostics(model: Model) -> tuple[Results, List[str]]:
+    """Solve the model and return potential issues found."""
+    K_full, F_ext, K, F = _assemble_matrices(model)
+    n_joints = len(model.joints)
+    try:
+        d = np.linalg.solve(K, F)
+        singular = False
+    except np.linalg.LinAlgError:
+        d = np.linalg.lstsq(K, F, rcond=None)[0]
+        singular = True
+
+    reactions_vec = K_full @ d - F_ext
+    displacements: Dict[int, Tuple[float, float, float]] = {}
+    reactions: Dict[int, Tuple[float, float, float]] = {}
+    for i in range(n_joints):
+        displacements[i] = (d[i * 3], d[i * 3 + 1], d[i * 3 + 2])
+        reactions[i] = (
+            reactions_vec[i * 3],
+            reactions_vec[i * 3 + 1],
+            reactions_vec[i * 3 + 2],
+        )
+
+    res = Results(displacements=displacements, reactions=reactions)
+
+    issues: List[str] = []
+    if singular or np.linalg.matrix_rank(K) < K.shape[0]:
+        issues.append("The structure may be unstable or insufficiently constrained.")
+
+    max_disp = float(np.max(np.abs(d))) if d.size else 0.0
+    if max_disp > 1e6:
+        issues.append("Very large displacements detected.")
+
+    if not model.supports:
+        issues.append("No supports defined.")
+
+    for m in model.members:
+        j1 = model.joints[m.start]
+        j2 = model.joints[m.end]
+        if np.isclose(j1.x, j2.x) and np.isclose(j1.y, j2.y):
+            issues.append(f"Member {m.start}-{m.end} has zero length.")
+            break
+
+    return res, issues
