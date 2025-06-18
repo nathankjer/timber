@@ -15,6 +15,9 @@ const {
   axisInfo,
   nearestPointOnLine,
 
+  /* view helpers */
+  setCurrentView,
+
   /* sheets / UI */
   getCurrentSheet,
   updateSheetHeader,
@@ -38,12 +41,12 @@ describe('geometry helpers (pure maths)', () => {
     ['+Y', { x: 1, y: 2, z: 3 }, { x: 1, y: -3 }],
     ['-Z', { x: 1, y: 2, z: 3 }, { x: -1, y: -2 }]
   ])('projectPoint for %s view', (view, p, expected) => {
-    global.currentView = view;
+    setCurrentView(view);
     expect(projectPoint(p)).toEqual(expected);
   });
 
   test('unprojectDelta mirrors projectPoint along +X view', () => {
-    global.currentView = '+X';
+    setCurrentView('+X');
     const res = unprojectDelta(5, 0); // dx ⇒ +y , dy ⇒ -z
     expect(res.y).toBeCloseTo(5);
     expect(res.z).toBeCloseTo(0);
