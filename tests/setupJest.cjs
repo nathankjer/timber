@@ -38,4 +38,4 @@ Element.prototype.getBoundingClientRect = () => ({
 });
 
 // Load the code under test using CommonJS
-require('../../src/static/index.js');                 // ₃
+require('../src/static/index.js');
