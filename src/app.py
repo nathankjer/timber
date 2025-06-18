@@ -6,7 +6,7 @@ import sys
 from flask import Flask, jsonify, render_template, request
 from flask_login import current_user, login_required
 
-from timber import Joint, Load, Member, Model, Support, solve
+from timber import Joint, Load, Member, Model, Support, solve_with_diagnostics
 from timber.extensions import bcrypt, db, login_manager, migrate
 
 # -------------------------------------------------------------------
@@ -86,11 +86,12 @@ def create_app(config_object: str | None = None) -> Flask:
         except (TypeError, KeyError) as exc:
             return jsonify({"error": f"Invalid payload: {exc}"}), 400
 
-        res = solve(model)
+        res, issues = solve_with_diagnostics(model)
         return jsonify(
             {
                 "displacements": {str(k): list(v) for k, v in res.displacements.items()},
                 "reactions": {str(k): list(v) for k, v in res.reactions.items()},
+                "issues": issues,
             }
         )
 

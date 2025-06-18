@@ -928,7 +928,15 @@ async function solveModel() {
     return;
   }
   const data = await resp.json();
-  const lines = ['Displacements:'];
+  const lines = [];
+  if (data.issues && data.issues.length) {
+    lines.push('Issues:');
+    for (const issue of data.issues) {
+      lines.push(' - ' + issue);
+    }
+    lines.push('');
+  }
+  lines.push('Displacements:');
   for (const [k, v] of Object.entries(data.displacements || {})) {
     lines.push(`Joint ${k}: ux=${(+v[0]).toExponential(3)} m, uy=${(+v[1]).toExponential(3)} m, rz=${(+v[2]).toExponential(3)} rad`);
   }
