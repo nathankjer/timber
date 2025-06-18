@@ -50,6 +50,8 @@
       <h2>Properties</h2>
       <div id="props-content" class="mb-3"></div>
       <button id="delete-btn" class="btn btn-danger btn-sm" disabled>Delete</button>
+      <button id="solve-btn" class="btn btn-primary btn-sm mt-2">Solve</button>
+      <pre id="solve-output" class="mt-3 small"></pre>
     </div>
   </div>
   {% else %}
@@ -407,13 +409,23 @@ function renderProperties() {
       if (el.type === 'Member' || el.type === 'Cable' || el.type === 'Load') {
         ['x2', 'y2', 'z2'].forEach(p => addNumberInput(form, p, p, el));
       }
+      if (el.type === 'Member' || el.type === 'Cable') {
+        ['E', 'A', 'I'].forEach(p => addNumberInput(form, p, p, el));
+      }
       if (el.type === 'Plane') {
         ['length', 'width'].forEach(p => addNumberInput(form, p, p, el));
       } else if (el.type === 'Solid') {
         ['width', 'height', 'depth'].forEach(p => addNumberInput(form, p, p, el));
       } else if (el.type === 'Support') {
-        const unit = globalProps.units === 'metric' ? 'N' : 'lb';
-        addNumberInput(form, `amount (${unit})`, 'amount', el);
+        ['ux', 'uy', 'rz'].forEach(p => {
+          const div = document.createElement('div');
+          div.className = 'form-check form-check-inline me-2';
+          div.innerHTML = `<input class='form-check-input' type='checkbox' id='prop-${p}'> <label class='form-check-label' for='prop-${p}'>${p}</label>`;
+          const input = div.querySelector('input');
+          input.checked = el[p] !== false;
+          input.addEventListener('change', () => { el[p] = input.checked; saveState(); });
+          form.appendChild(div);
+        });
       } else if (el.type === 'Load') {
         const unit = globalProps.units === 'metric' ? 'N' : 'lb';
         addNumberInput(form, `amount (${unit})`, 'amount', el);
@@ -562,6 +574,9 @@ function addElement(type) {
       x2: base.x + (dir.x || 0),
       y2: base.y + (dir.y || 0),
       z2: base.z + (dir.z || 0),
+      E: 200e9,
+      A: 0.01,
+      I: 1e-6,
     });
   } else if (type === 'Plane') {
     base.length = 40;
@@ -580,7 +595,9 @@ function addElement(type) {
       amount: 20,
     });
   } else if (type === 'Support') {
-    base.amount = 0;
+    base.ux = true;
+    base.uy = true;
+    base.rz = true;
   }
   elements.push(base);
   applySnapping(base);
@@ -770,6 +787,9 @@ async function loadState() {
         obj.x2 = e.x2 ?? obj.x;
         obj.y2 = e.y2 ?? obj.y;
         obj.z2 = e.z2 ?? obj.z;
+        obj.E = e.E ?? 200e9;
+        obj.A = e.A ?? 0.01;
+        obj.I = e.I ?? 1e-6;
       } else if (obj.type === 'Plane') {
         obj.length = e.length ?? 40;
         obj.width = e.width ?? 40;
@@ -784,7 +804,9 @@ async function loadState() {
         obj.z2 = e.z2 ?? obj.z;
         obj.amount = Math.hypot(obj.x2 - obj.x, obj.y2 - obj.y, obj.z2 - obj.z);
       } else if (obj.type === 'Support') {
-        obj.amount = e.amount ?? 0;
+        obj.ux = e.ux !== false;
+        obj.uy = e.uy !== false;
+        obj.rz = e.rz !== false;
       }
       return obj;
     });
@@ -835,6 +857,83 @@ document.querySelectorAll('.view-btn').forEach(btn => {
     render();
   });
 });
+
+function buildModel() {
+  const joints = [];
+  const map = new Map();
+  const key = (x, y) => `${x.toFixed(6)},${y.toFixed(6)}`;
+  function idx(x, y) {
+    const k = key(x, y);
+    if (!map.has(k)) {
+      map.set(k, joints.length);
+      joints.push({ x, y });
+    }
+    return map.get(k);
+  }
+
+  elements.forEach(el => {
+    if (el.type === 'Joint' || el.type === 'Support') {
+      idx(el.x, el.y);
+    } else if (el.type === 'Member' || el.type === 'Cable') {
+      idx(el.x, el.y);
+      idx(el.x2 ?? el.x, el.y2 ?? el.y);
+    } else if (el.type === 'Load') {
+      idx(el.x, el.y);
+    }
+  });
+
+  const members = elements.filter(e => e.type === 'Member' || e.type === 'Cable').map(e => ({
+    start: idx(e.x, e.y),
+    end: idx(e.x2 ?? e.x, e.y2 ?? e.y),
+    E: e.E ?? 200e9,
+    A: e.A ?? 0.01,
+    I: e.I ?? 1e-6,
+  }));
+
+  const loads = elements.filter(e => e.type === 'Load').map(e => {
+    const i = idx(e.x, e.y);
+    const dx = (e.x2 ?? e.x) - e.x;
+    const dy = (e.y2 ?? e.y) - e.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const amt = e.amount ?? 0;
+    return { joint: i, fx: amt * dx / len, fy: amt * dy / len, mz: 0 };
+  });
+
+  const supports = elements.filter(e => e.type === 'Support').map(e => ({
+    joint: idx(e.x, e.y),
+    ux: e.ux !== false,
+    uy: e.uy !== false,
+    rz: e.rz !== false,
+  }));
+
+  return { joints, members, loads, supports };
+}
+
+async function solveModel() {
+  const payload = buildModel();
+  const resp = await fetch('/solve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const out = document.getElementById('solve-output');
+  if (!resp.ok) {
+    out.textContent = 'Error solving';
+    return;
+  }
+  const data = await resp.json();
+  const lines = ['Displacements:'];
+  for (const [k, v] of Object.entries(data.displacements || {})) {
+    lines.push(`Joint ${k}: ux=${(+v[0]).toExponential(3)} m, uy=${(+v[1]).toExponential(3)} m, rz=${(+v[2]).toExponential(3)} rad`);
+  }
+  lines.push('Reactions:');
+  for (const [k, v] of Object.entries(data.reactions || {})) {
+    lines.push(`Joint ${k}: fx=${(+v[0]).toExponential(3)} N, fy=${(+v[1]).toExponential(3)} N, mz=${(+v[2]).toExponential(3)} N·m`);
+  }
+  out.textContent = lines.join('\n');
+}
+
+document.getElementById('solve-btn').addEventListener('click', solveModel);
 
 loadState();
 </script>
