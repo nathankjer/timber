@@ -28,4 +28,4 @@ Element.prototype.getBoundingClientRect = () => ({
   top: 0
 });
 
-require('../../src/static/index.js');
+require('../src/static/index.js');
