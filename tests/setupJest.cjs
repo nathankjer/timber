@@ -49,5 +49,17 @@ Element.prototype.getBoundingClientRect = () => ({
   width: 800, height: 600, left: 0, top: 0
 });
 
-// Load the code under test using CommonJS
-require('../src/static/index.js');
+// Load your script *as if* it were a plain <script>.
+// That way, each `function foo(){}` becomes `globalThis.foo = …`.
+const fs   = require('fs');
+const path = require('path');
+const vm   = require('vm');
+
+const code = fs.readFileSync(
+  path.resolve(__dirname, '../src/static/index.js'),
+  'utf8'
+);
+
+// Run in the *current* context (globalThis)
+// so all top-level bindings go to globalThis.
+vm.runInThisContext(code, { filename: 'index.js' });
