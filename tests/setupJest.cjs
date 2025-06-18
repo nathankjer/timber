@@ -1,5 +1,5 @@
-// tests/setupJest.js
-import fetchMock from 'jest-fetch-mock';
+// tests/setupJest.cjs
+const fetchMock = require('jest-fetch-mock');
 fetchMock.enableMocks();
 
 global.alert   = jest.fn();
@@ -37,5 +37,5 @@ Element.prototype.getBoundingClientRect = () => ({
   width: 800, height: 600, left: 0, top: 0
 });
 
-// Now load your script against the stubbed DOM
-await import('../src/static/index.js');
+// Load the code under test using CommonJS
+require('../../src/static/index.js');                 // ₃
