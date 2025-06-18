@@ -1,4 +1,4 @@
-import fetchMock from 'jest-fetch-mock';
+const fetchMock = require('jest-fetch-mock');
 
 fetchMock.enableMocks();            // mock global fetch
 global.alert   = jest.fn();         // silence alert / prompt in tests
@@ -28,5 +28,4 @@ Element.prototype.getBoundingClientRect = () => ({
   top: 0
 });
 
-// Load the production script **after** the DOM stub exists
-await import('../../src/static/index.js');
+require('../../src/static/index.js');

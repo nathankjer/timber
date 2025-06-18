@@ -1,4 +1,4 @@
-export default {
+module.exports = {
   testEnvironment: 'jsdom',
   setupFiles: ['<rootDir>/tests/setupJest.js'],
   moduleNameMapper: {
