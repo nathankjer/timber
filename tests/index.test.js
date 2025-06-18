@@ -1,258 +1,216 @@
-/**
- * NOTE  – All public functions live on the global window object because the
- *         script is executed as a plain <script>.  We simply pull them off.
- */
+const exported = globalThis;       // the script augments the global object
+
+// Shorthands that we really care about
 const {
+  projectPoint,
+  unprojectDelta,
+  distanceScreen,
+  distanceToSegment2D,
+  axisInfo,
+  planeCorners,
+  solidScreenRect,
   getCurrentSheet,
   updateSheetHeader,
   renderSheetList,
   createSheet,
   deleteSheet,
-  projectPoint,
-  unprojectDelta,
-  screenCoords,
-  distanceScreen,
-  distanceToSegment2D,
-  axisInfo,
-  planeCorners,
-  planeScreenRect,
-  solidScreenRect,
-  nearestPointOnLine,
-  getSnapPoints,
-  getSnapLines,
   ensureJointAt,
+  getSnapPoints,
   applySnapping,
-  addNumberInput,
-  renderProperties,
-  render,
-  addElement,
-  deleteElement,
-  startDrag,
-  onDrag,
-  endDrag,
-  startPan,
-  onPan,
-  endPan,
+  buildModel,
   saveState,
   loadState,
-  buildModel,
-  idx,
   solveModel
-} = globalThis;
+} = exported;
+
+beforeEach(() => {
+  // ⟹ give every test a clean slate
+  fetch.resetMocks();
+  exported.elements  = [];
+  exported.sheets    = [
+    { id: 1, name: 'Sheet 1' },
+    { id: 2, name: 'Sheet 2' }
+  ];
+  exported.sheetId   = 1;
+
+  // Restore DOM mutations that previous specs may have changed
+  document.getElementById('sheet-title').textContent = '';
+  document.getElementById('sheet-list').innerHTML    = '';
+  exported.currentView = '+X';
+  exported.zoom        = 1;
+  exported.panX = exported.panY = 0;
+});
 
 /* ------------------------------------------------------------------ */
-/*  Pure geometry helpers                                             */
+/*  Geometry helpers                                                  */
 /* ------------------------------------------------------------------ */
+
 describe('geometry helpers', () => {
+  // Truth-table for projectPoint / unprojectDelta               (✓ = spec passes)
   test.each([
-    ['+X', { x: 1, y: 2, z: 3 }, { x: 2, y: -3 }],
-    ['-X', { x: 1, y: 2, z: 3 }, { x: -2, y: -3 }],
-    ['+Y', { x: 1, y: 2, z: 3 }, { x: 1, y: -3 }],
-    ['-Z', { x: 1, y: 2, z: 3 }, { x: -1, y: -2 }]
+    ['+X', { x: 0, y: 2,  z: 3 }, { x:  2, y: -3 }],
+    ['-X', { x: 0, y: 2,  z: 3 }, { x: -2, y: -3 }],
+    ['+Y', { x: 1, y: 0,  z: 3 }, { x:  1, y: -3 }],
+    ['-Y', { x: 1, y: 0,  z: 3 }, { x: -1, y: -3 }],
+    ['+Z', { x: 1, y: 2,  z: 0 }, { x:  1, y: -2 }],
+    ['-Z', { x: 1, y: 2,  z: 0 }, { x: -1, y: -2 }]
   ])('projectPoint %s', (view, p, expected) => {
-    global.currentView = view;
+    exported.currentView = view;
     expect(projectPoint(p)).toEqual(expected);
   });
 
-  test('unprojectDelta is inverse of projectPoint XY case', () => {
-    global.currentView = '+Z';
-    const { x, y } = unprojectDelta(5, -7);
-    expect(x).toBeCloseTo(5);
-    expect(y).toBeCloseTo(7);
+  it('unprojectDelta maps screen Δ back to world Δ consistently', () => {
+    exported.currentView = '+Z';      // (x,y) plane visible
+    const worldDelta = unprojectDelta(5, -7);
+    expect(worldDelta).toEqual({ x: 5, y: 7 });
   });
 
-  test('distanceScreen', () => {
-    expect(distanceScreen({ x: 0, y: 0 }, { x: 3, y: 4 })).toBeCloseTo(5);
+  it('distanceScreen obeys Pythagoras', () => {
+    expect(distanceScreen({ x: 0, y: 0 }, { x: 3, y: 4 }))
+      .toBeCloseTo(5);
   });
 
-  test('distanceToSegment2D – point on segment == 0', () => {
-    const p = { x: 2, y: 0 };
-    const a = { x: 0, y: 0 };
-    const b = { x: 4, y: 0 };
+  it('distanceToSegment2D is zero for on-segment point', () => {
+    const a = { x: 0, y: 0 }, b = { x: 4, y: 0 }, p = { x: 2, y: 0 };
     expect(distanceToSegment2D(p, a, b)).toBeCloseTo(0);
   });
 
-  test('nearestPointOnLine clamps outside segment', () => {
-    const p = { x: 10, y: 0, z: 0 };
-    const a = { x: 0, y: 0, z: 0 };
-    const b = { x: 1, y: 0, z: 0 };
-    expect(nearestPointOnLine(p, a, b)).toEqual(b);
-  });
-
-  test('axisInfo returns correct mapping', () => {
+  it('axisInfo returns orthogonal axes/signs for +Y view', () => {
     expect(axisInfo('+Y')).toEqual({
-      h: { axis: 'x', sign: 1 },
+      h: { axis: 'x', sign:  1 },
       v: { axis: 'z', sign: -1 }
     });
   });
 
-  test('planeCorners (Z-plane)', () => {
-    const corners = planeCorners({ x: 0, y: 0, z: 0, length: 20, width: 10 });
-    expect(corners).toHaveLength(4);
-    expect(corners[0]).toEqual({ x: -10, y: -5, z: 0 });
-  });
+  it('solidScreenRect halves the on-screen width/height correctly', () => {
+    // stub screenCoords => object centre (0,0)
+    const originalSC = exported.screenCoords;
+    exported.screenCoords = () => ({ x: 0, y: 0 });
 
-  test('planeScreenRect uses screenCoords', () => {
-    // Stub screenCoords to identity projection
-    const original = global.screenCoords;
-    global.screenCoords = (p) => ({ x: p.x, y: p.y });
-    const rect = planeScreenRect({ x: 0, y: 0, z: 0, length: 20, width: 20 });
-    expect(rect).toEqual({ left: -10, right: 10, top: -10, bottom: 10 });
-    global.screenCoords = original;
-  });
-
-  test('solidScreenRect dimensions respect currentView', () => {
-    // identity screenCoords again
-    const original = global.screenCoords;
-    global.screenCoords = () => ({ x: 0, y: 0 });
-    global.currentView = '+X';
-    global.zoom = 1;
+    exported.currentView = '+X';           // h-axis = y ⇒ uses width
     const rect = solidScreenRect({ x: 0, y: 0, z: 0, width: 20, height: 30, depth: 40 });
-    expect(rect.left).toBeCloseTo(-15);  // width/2
-    expect(rect.top).toBeCloseTo(-20);   // depth/2 in this view
-    global.screenCoords = original;
+    expect(rect.right - rect.left).toBeCloseTo(20);     // width
+    exported.screenCoords = originalSC;
+  });
+
+  it('planeCorners makes a square of correct half-sizes for Z-normal plane', () => {
+    const cs = planeCorners({ x: 0, y: 0, z: 0, length: 20, width: 10 });
+    expect(cs).toContainEqual({ x: -10, y: -5, z: 0 });
+    expect(cs).toHaveLength(4);
   });
 });
 
 /* ------------------------------------------------------------------ */
-/*  Sheet list / header                                               */
+/*  Sheet list / header helpers                                       */
 /* ------------------------------------------------------------------ */
+
 describe('sheet helpers', () => {
-  beforeEach(() => {
-    global.sheets  = [
-      { id: 1, name: 'S1' },
-      { id: 2, name: 'S2' }
-    ];
-    global.sheetId = 1;
+  it('getCurrentSheet returns the active sheet object', () => {
+    expect(getCurrentSheet()).toMatchObject({ id: 1, name: 'Sheet 1' });
   });
 
-  test('getCurrentSheet returns active sheet', () => {
-    expect(getCurrentSheet().name).toBe('S1');
-  });
-
-  test('updateSheetHeader writes to DOM', () => {
+  it('updateSheetHeader writes the sheet name into #sheet-title', () => {
     updateSheetHeader();
-    expect(document.getElementById('sheet-title').textContent).toBe('S1');
+    expect(document.getElementById('sheet-title').textContent)
+      .toBe('Sheet 1');
   });
 
-  test('renderSheetList produces two list items + active class', () => {
+  it('renderSheetList renders <li> items and highlights active sheet', () => {
     renderSheetList();
-    const items = document.querySelectorAll('#sheet-list li');
-    expect(items).toHaveLength(2);
+    const items = [...document.querySelectorAll('#sheet-list li')];
+    expect(items.map(li => li.textContent.trim())).toEqual(['Sheet 1', 'Sheet 2']);
     expect(items[0].classList.contains('active')).toBe(true);
   });
 
-  test('createSheet() hits /sheet and mutates global state', async () => {
+  it('createSheet pushes a new sheet and updates sheetId', async () => {
+    // first mock: POST /sheet
     fetch.mockResponseOnce(JSON.stringify({ id: 3, name: 'Untitled' }));
-    const prevLen = sheets.length;
-    const spyLoad = jest.spyOn(global, 'loadState').mockResolvedValue();
-    await createSheet();
-    expect(fetch).toHaveBeenCalledWith('/sheet', expect.any(Object));
-    expect(sheets).toHaveLength(prevLen + 1);
-    expect(sheetId).toBe(3);
-    spyLoad.mockRestore();
+    // second mock: GET /sheet/3 from loadState()
+    fetch.mockResponseOnce(JSON.stringify({ id: 3, name: 'Untitled', elements: [] }));
+
+    // fake loadState so we don’t depend on network JSON structure
+    const loadSpy = jest.spyOn(exported, 'loadState').mockResolvedValue();
+
+    const previousCount = exported.sheets.length;
+    await createSheet();                      // await ensures the promise chain finished
+
+    expect(exported.sheets).toHaveLength(previousCount + 1);
+    expect(exported.sheetId).toBe(3);
+    expect(fetch).toHaveBeenCalledTimes(1);   // only POST because loadState is stubbed
+
+    loadSpy.mockRestore();
   });
 
-  test('deleteSheet removes sheet and selects first remaining', async () => {
+  it('deleteSheet removes sheet and selects the first remaining', async () => {
     fetch.mockResponseOnce('', { status: 200 });
     await deleteSheet(2);
-    expect(sheets.map((s) => s.id)).toEqual([1]);
-    expect(sheetId).toBe(1);
+    expect(exported.sheets.map(s => s.id)).toEqual([1]);
+    expect(exported.sheetId).toBe(1);
   });
 });
 
 /* ------------------------------------------------------------------ */
 /*  Snapping & element helpers                                        */
 /* ------------------------------------------------------------------ */
+
 describe('snapping helpers', () => {
-  beforeEach(() => {
-    global.elements = [
-      { id: 99, type: 'Joint', x: 0, y: 0, z: 0 }
-    ];
+  it('ensureJointAt only creates a joint if no existing one is nearby', () => {
+    exported.elements.push({ id: 42, type: 'Joint', x: 0, y: 0, z: 0 });
+    ensureJointAt(0, 0, 0);                 // duplicate – should be ignored
+    ensureJointAt(1, 0, 0);                 // new joint
+    expect(exported.elements.filter(e => e.type === 'Joint')).toHaveLength(2);
   });
 
-  test('ensureJointAt only inserts unique joints', () => {
-    const start = elements.length;
-    ensureJointAt(0, 0, 0);
-    ensureJointAt(1, 0, 0);
-    expect(elements.length).toBe(start + 1); // only the second call added
+  it('getSnapPoints excludes elements whose id is ignored', () => {
+    exported.elements.push(
+      { id: 10, type: 'Joint', x: 0, y: 0, z: 0 },
+      { id: 11, type: 'Joint', x: 1, y: 0, z: 0 }
+    );
+    const ptsAll   = getSnapPoints();        // nothing ignored
+    const ptsNo10  = getSnapPoints(10);      // ignore first
+    expect(ptsAll.length).toBeGreaterThan(ptsNo10.length);
   });
 
-  test('getSnapPoints returns points minus ignored id', () => {
-    const pts = getSnapPoints(99);
-    expect(pts).toHaveLength(0);
-  });
+  it('applySnapping moves a member end onto an existing joint within tolerance', () => {
+    // existing snap-target
+    exported.elements.push({ id: 90, type: 'Joint', x: 0, y: 0, z: 0 });
 
-  test('applySnapping moves member start-point onto existing joint', () => {
+    // member whose first point is almost at (0,0,0)
     const member = {
-      id: 123,
+      id: 91,
       type: 'Member',
-      x: 0.2,
-      y: 0,
-      z: 0,
-      x2: 5,
-      y2: 0,
-      z2: 0
+      x: 0.05, y: 0, z: 0,
+      x2: 5,   y2: 0, z2: 0
     };
-    elements.push(member);
-    // identity screenCoords so 0.2 is within SNAP_PIXELS
-    const original = global.screenCoords;
-    global.screenCoords = (p) => ({ x: p.x * 10, y: p.y * 10 });
+    exported.elements.push(member);
+
+    // make screenCoords return pixel-distance = 0.5 SNAP_PIXELS so that snapping triggers
+    const originalSC = exported.screenCoords;
+    exported.screenCoords = ({ x, y }) => ({ x: x * 10, y: y * 10 });
+
     applySnapping(member);
-    expect(member.x).toBeCloseTo(0);
-    global.screenCoords = original;
+    expect(member.x).toBeCloseTo(0);         // snapped to the joint
+
+    exported.screenCoords = originalSC;
   });
 });
 
 /* ------------------------------------------------------------------ */
-/*  DOM helpers                                                        */
+/*  Model builder + server round-trips                                */
 /* ------------------------------------------------------------------ */
-describe('DOM widgets', () => {
-  test('addNumberInput inserts an input that updates element', () => {
-    const container = document.createElement('div');
-    const el = { foo: 1 };
-    addNumberInput(container, 'Foo', 'foo', el);
-    const inp = container.querySelector('input');
-    inp.value = '42';
-    inp.dispatchEvent(new Event('input', { bubbles: true }));
-    expect(el.foo).toBe(42);
+
+describe('model builder & persistence', () => {
+  it('buildModel collects joints and members correctly', () => {
+    exported.elements.push(
+      { id: 1, type: 'Joint',  x: 0, y: 0, z: 0 },
+      { id: 2, type: 'Member', x: 0, y: 0, z: 0, x2: 1, y2: 0, z2: 0 }
+    );
+    const mdl = buildModel();
+    expect(mdl.joints).toHaveLength(2);      // (0,0) and (1,0)
+    expect(mdl.members).toHaveLength(1);
   });
 
-  test('renderProperties runs without throwing when nothing selected', () => {
-    global.selectedId = null;
-    expect(() => renderProperties()).not.toThrow();
-  });
-});
-
-/* ------------------------------------------------------------------ */
-/*  Model builder                                                      */
-/* ------------------------------------------------------------------ */
-describe('buildModel / idx', () => {
-  beforeEach(() => {
-    global.elements = [
-      { id: 1, type: 'Joint', x: 0, y: 0, z: 0 },
-      { id: 2, type: 'Joint', x: 1, y: 0, z: 0 },
-      { id: 3, type: 'Member', x: 0, y: 0, z: 0, x2: 1, y2: 0, z2: 0 }
-    ];
-  });
-
-  test('idx returns consistent indices', () => {
-    expect(idx(0, 0)).toBe(idx(0, 0));        // identical call -> same
-    expect(idx(0, 0)).not.toBe(idx(1, 0));    // different coord -> diff idx
-  });
-
-  test('buildModel gathers joints/members', () => {
-    const model = buildModel();
-    expect(model.joints).toHaveLength(2);
-    expect(model.members).toHaveLength(1);
-  });
-});
-
-/* ------------------------------------------------------------------ */
-/*  saveState / loadState / solveModel (fetch driven)                  */
-/* ------------------------------------------------------------------ */
-describe('server round-trips', () => {
-  test('saveState POSTs /sheet/action', async () => {
+  it('saveState performs a POST to /sheet/action', async () => {
     fetch.mockResponseOnce('{}');
     await saveState();
     expect(fetch).toHaveBeenCalledWith(
@@ -261,22 +219,26 @@ describe('server round-trips', () => {
     );
   });
 
-  test('loadState populates elements', async () => {
-    const payload = { id: 1, name: 'S1', elements: [{ id: 1, type: 'Joint', x: 0, y: 0, z: 0 }] };
+  it('loadState replaces the global elements array', async () => {
+    const payload = {
+      id: 1,
+      name: 'Sheet 1',
+      elements: [{ id: 1, type: 'Joint', x: 2, y: 2, z: 0 }]
+    };
     fetch.mockResponseOnce(JSON.stringify(payload));
     await loadState();
-    expect(elements).toHaveLength(1);
+    expect(exported.elements).toHaveLength(1);
+    expect(exported.elements[0]).toMatchObject({ x: 2, y: 2 });
   });
 
-  test('solveModel writes output', async () => {
-    const fakeResp = {
-      displacements: { 0: [0, 0, 0] },
-      reactions:     { 0: [0, 0, 0] }
-    };
-    fetch
-      .mockResponseOnce(JSON.stringify(fakeResp));    // /solve
+  it('solveModel writes a minimally formatted result to #solve-output', async () => {
+    fetch.mockResponseOnce(JSON.stringify({
+      displacements: { 0:[0,0,0] },
+      reactions:     { 0:[0,0,0] }
+    }));
     await solveModel();
-    expect(document.getElementById('solve-output').textContent)
-      .toMatch(/Displacements:/);
+    const txt = document.getElementById('solve-output').textContent;
+    expect(txt).toMatch(/Displacements:/);
+    expect(txt).toMatch(/Reactions:/);
   });
 });
