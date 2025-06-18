@@ -97,9 +97,14 @@ def solve(model: Model) -> Results:
     # Assemble global load vector
     for load in model.loads:
         idx = load.joint * 3
-        F_ext[idx] += load.fx
-        F_ext[idx + 1] += load.fy
-        F_ext[idx + 2] += load.mz
+        # Incoming data may contain null values which become ``None`` when
+        # parsed from JSON.  Treat these as zeros so the solver does not crash.
+        fx = 0.0 if load.fx is None else float(load.fx)
+        fy = 0.0 if load.fy is None else float(load.fy)
+        mz = 0.0 if load.mz is None else float(load.mz)
+        F_ext[idx] += fx
+        F_ext[idx + 1] += fy
+        F_ext[idx + 2] += mz
 
     # Assemble global stiffness matrix
     for m in model.members:
