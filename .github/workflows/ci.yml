@@ -30,7 +30,7 @@ jobs:
           restore-keys: ${{ runner.os }}-npm-
 
       - name: Install JS deps
-        run: npm ci
+        run: npm install
 
       - name: JavaScript tests
         run: npm test -- --ci --coverage
