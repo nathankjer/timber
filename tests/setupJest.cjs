@@ -2,6 +2,18 @@
 const fetchMock = require('jest-fetch-mock');
 fetchMock.enableMocks();
 
+// ──────────────────────────────────────────────────────────────────────────────
+// 👇 Add this DEFAULT response *before* importing your module
+fetchMock.mockResponse(async req => {
+  // if you want to distinguish create/delete/solve endpoints you can:
+  if (req.url.match(/^\/sheet\/\d+$/)) {
+    return JSON.stringify({ id: 1, name: 'Sheet 1', elements: [] });
+  }
+  // fallback for any other fetch (POST /sheet/action, /solve, …)
+  return JSON.stringify({});
+});
+// ──────────────────────────────────────────────────────────────────────────────
+
 global.alert   = jest.fn();
 global.prompt  = jest.fn();
 
