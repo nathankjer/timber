@@ -91,6 +91,11 @@ let panStartY = 0;
 let panOrigX = 0;
 let panOrigY = 0;
 const globalProps = { g: 9.81, units: 'metric' };
+const PROP_LABELS = {
+  E: "Young's Modulus",
+  A: 'Cross Sectional Area',
+  I: 'Second Moment of Inertia',
+};
 
 function renderSheetList() {
   const list = document.getElementById('sheet-list');
@@ -410,7 +415,7 @@ function renderProperties() {
         ['x2', 'y2', 'z2'].forEach(p => addNumberInput(form, p, p, el));
       }
       if (el.type === 'Member' || el.type === 'Cable') {
-        ['E', 'A', 'I'].forEach(p => addNumberInput(form, p, p, el));
+        ['E', 'A', 'I'].forEach(p => addNumberInput(form, `${PROP_LABELS[p]} (${p})`, p, el));
       }
       if (el.type === 'Plane') {
         ['length', 'width'].forEach(p => addNumberInput(form, p, p, el));
