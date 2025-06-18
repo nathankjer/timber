@@ -1,0 +1,15 @@
+{
+  "name": "frontend-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "jest --runInBand"
+  },
+  "devDependencies": {
+    "jest": "^30.0.0",
+    "jest-environment-jsdom": "^30.0.0",
+    "jest-fetch-mock": "^4.0.2",
+    "jsdom": "^23.0.0",
+    "identity-obj-proxy": "^3.0.0"
+  }
+}
