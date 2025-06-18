@@ -18,7 +18,14 @@ let dragStartX = 0;
 let dragStartY = 0;
 let dragOrig = null;
 let dragMode = 'body';
-let currentView = '+X';
+// Use `var` so `currentView` becomes a property of the global object.
+// This allows tests (which run the file in a VM sandbox) to mutate
+// `currentView` by assigning to `global.currentView`.
+var currentView = '+X';
+
+function setCurrentView(view) {
+  currentView = view;
+}
 let zoom = 1;
 let panX = 0;
 let panY = 0;
@@ -806,7 +813,7 @@ document.getElementById('edit-title').addEventListener('click', async () => {
 
 document.querySelectorAll('.view-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    currentView = btn.dataset.view;
+    setCurrentView(btn.dataset.view);
     document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     render();
