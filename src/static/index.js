@@ -432,6 +432,16 @@ function addNumberInput(container, label, prop, el) {
   input.addEventListener("input", (ev) => {
     const v = parseFloat(ev.target.value);
     el[prop] = Number.isFinite(v) ? v : 0;
+    if (prop === "amount" && el.type === "Load") {
+      const dx = (el.x2 ?? el.x) - el.x;
+      const dy = (el.y2 ?? el.y) - el.y;
+      const dz = (el.z2 ?? el.z) - el.z;
+      const len = Math.hypot(dx, dy, dz) || 1;
+      const scale = el.amount / len;
+      el.x2 = el.x + dx * scale;
+      el.y2 = el.y + dy * scale;
+      el.z2 = el.z + dz * scale;
+    }
     render(false);
     saveState();
   });

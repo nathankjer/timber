@@ -32,6 +32,7 @@ class Load:
     fx: float = 0.0
     fy: float = 0.0
     mz: float = 0.0
+    amount: float = 0.0
 
 
 @dataclass
