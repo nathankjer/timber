@@ -369,3 +369,42 @@ describe("addNumberInput widget", () => {
     expect(obj.foo).toBe(123);
   });
 });
+
+//--------------------------------------------------------------------
+//  ZOOM / KEYBOARD CONTROLS
+//--------------------------------------------------------------------
+
+describe("zoom and keyboard controls", () => {
+  test("zoomIn increases projected distance", () => {
+    resetPanZoom();
+    const before = screenCoords({ x: 0, y: 10, z: 0 }).x;
+    zoomIn();
+    const after = screenCoords({ x: 0, y: 10, z: 0 }).x;
+    expect(after - 400).toBeCloseTo((before - 400) * 1.1);
+  });
+
+  test("zoomOut decreases projected distance", () => {
+    resetPanZoom();
+    const before = screenCoords({ x: 0, y: 10, z: 0 }).x;
+    zoomOut();
+    const after = screenCoords({ x: 0, y: 10, z: 0 }).x;
+    expect(after - 400).toBeCloseTo((before - 400) * 0.9);
+  });
+
+  test("resetPanZoom restores default zoom", () => {
+    zoomIn();
+    resetPanZoom();
+    const sc = screenCoords({ x: 0, y: 10, z: 0 }).x;
+    expect(sc).toBeCloseTo(410);
+  });
+
+  test("pressing Delete triggers deleteElement", () => {
+    addElement("Joint");
+    const g = document.querySelector("#canvas g");
+    g.dispatchEvent(
+      new MouseEvent("mousedown", { clientX: 0, clientY: 0, bubbles: true }),
+    );
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete" }));
+    expect(buildModel().joints.length).toBe(0);
+  });
+});
