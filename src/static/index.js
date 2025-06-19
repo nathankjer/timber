@@ -1089,7 +1089,13 @@ function buildModel() {
       const dy = (e.y2 ?? e.y) - e.y;
       const len = Math.hypot(dx, dy) || 1;
       const amt = e.amount ?? 0;
-      return { joint: i, fx: (amt * dx) / len, fy: (amt * dy) / len, mz: 0 };
+      return {
+        joint: i,
+        fx: (amt * dx) / len,
+        fy: (amt * dy) / len,
+        mz: 0,
+        amount: amt,
+      };
     });
 
   const supports = elements
