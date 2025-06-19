@@ -1,12 +1,15 @@
 import math
 import sys
+import pytest
 
 sys.path.append("src")
 
+import app as app_module  # noqa: E402 – must come after sys.path tweak
 from app import create_app
 from config import DevelopmentConfig
 from timber import Joint, Load, Member, Model, Support, solve
 from timber.extensions import db
+from timber.models import Sheet, User
 
 
 class TestConfig(DevelopmentConfig):
@@ -15,8 +18,8 @@ class TestConfig(DevelopmentConfig):
     WTF_CSRF_ENABLED = False
 
 
-def create_test_app():
-    app = create_app(TestConfig)
+def create_test_app(config_obj=TestConfig):
+    app = create_app(config_obj)
     with app.app_context():
         db.create_all()
     return app
@@ -31,7 +34,7 @@ def test_solve_endpoint_returns_results():
     )
     expected = solve(model)
 
-    app = create_app()
+    app = create_test_app()
     with app.test_client() as client:
         resp = client.post(
             "/solve",
@@ -52,7 +55,7 @@ def test_sheet_rename():
     app = create_test_app()
     with app.app_context():
         client = app.test_client()
-        # register and login
+        # register and login without triggering index
         client.post(
             "/auth/register",
             data={
@@ -61,15 +64,115 @@ def test_sheet_rename():
                 "password": "secret",
                 "confirm_password": "secret",
             },
-            follow_redirects=True,
+            follow_redirects=False,
         )
         client.post(
             "/auth/login",
             data={"email": "user@example.com", "password": "secret"},
-            follow_redirects=True,
+            follow_redirects=False,
         )
         resp = client.post("/sheet", json={"name": "Old"})
         sheet_id = resp.get_json()["id"]
         resp = client.put(f"/sheet/{sheet_id}", json={"name": "New"})
         assert resp.status_code == 200
         assert resp.get_json()["name"] == "New"
+
+
+def test_solve_endpoint_requires_json():
+    app = create_test_app()
+    with app.test_client() as client:
+        resp = client.post("/solve", data="not-json", content_type="text/plain")
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "JSON body required"
+
+
+def test_solve_endpoint_empty_payload_raises_error():
+    app = create_test_app()
+    with app.test_client() as client:
+        with pytest.raises(ValueError):
+            client.post("/solve", json={})
+
+
+def test_solve_endpoint_invalid_nested_payload():
+    payload = {"joints": [{"x": 0.0}]}  # missing 'y'
+    app = create_test_app()
+    with app.test_client() as client:
+        resp = client.post("/solve", json=payload)
+        assert resp.status_code == 400
+        assert "Invalid payload" in resp.get_json()["error"]
+
+
+def _capture_render_context(monkeypatch):
+    captured = {}
+
+    def fake_render(_tmpl, **ctx):
+        captured["ctx"] = ctx
+        return ""
+
+    monkeypatch.setattr(app_module, "render_template", fake_render, raising=True)
+    return captured
+
+
+def test_index_route_unauthenticated(monkeypatch):
+    app = create_test_app()
+    captured = _capture_render_context(monkeypatch)
+    with app.test_client() as client:
+        resp = client.get("/")
+        assert resp.status_code == 200
+    assert captured["ctx"]["sheet_id"] is None
+    assert captured["ctx"]["sheets"] == []
+
+
+def _register_and_login(client, email="user@example.com", pwd="secret"):
+    client.post(
+        "/auth/register",
+        data={"name": "User", "email": email, "password": pwd, "confirm_password": pwd},
+        follow_redirects=False,
+    )
+    client.post(
+        "/auth/login",
+        data={"email": email, "password": pwd},
+        follow_redirects=False,
+    )
+
+
+def test_index_route_authenticated_creates_default_sheet(monkeypatch):
+    app = create_test_app()
+    captured = _capture_render_context(monkeypatch)
+    with app.test_client() as client, app.app_context():
+        _register_and_login(client)
+        initial_count = Sheet.query.count()
+        client.get("/")
+        assert Sheet.query.count() == initial_count + 1
+        new_sheet = Sheet.query.order_by(Sheet.id.desc()).first()
+        assert captured["ctx"]["sheet_id"] == new_sheet.id
+        assert captured["ctx"]["sheets"] == [
+            {"id": new_sheet.id, "name": new_sheet.name}
+        ]
+
+
+def test_index_route_authenticated_with_existing_sheets(monkeypatch):
+    app = create_test_app()
+    captured = _capture_render_context(monkeypatch)
+    with app.test_client() as client, app.app_context():
+        _register_and_login(client, email="second@example.com")
+        user = User.query.filter_by(email="second@example.com").first()
+        s1 = Sheet(name="First", user_id=user.id)
+        s2 = Sheet(name="Second", user_id=user.id)
+        db.session.add_all([s1, s2])
+        db.session.commit()
+        initial_count = Sheet.query.count()
+        client.get("/")
+        assert Sheet.query.count() == initial_count
+        sheets_list = captured["ctx"]["sheets"]
+        # Should list sheets sorted by id
+        ids = [s["id"] for s in sheets_list]
+        assert ids == sorted(ids)
+        assert captured["ctx"]["sheet_id"] == ids[0]
+
+
+def test_create_app_accepts_class_and_string_config():
+    app1 = create_app(TestConfig)
+    assert app1.config["TESTING"] is True
+    app2 = create_app("config.DevelopmentConfig")
+    assert app2.config["DEBUG"] == DevelopmentConfig.DEBUG
