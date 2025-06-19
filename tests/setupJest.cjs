@@ -1,14 +1,14 @@
 // tests/setupJest.cjs
-const fetchMock = require('jest-fetch-mock');
+const fetchMock = require("jest-fetch-mock");
 fetchMock.enableMocks();
 
 // 1) default every fetch to valid JSON
-fetchMock.mockResponse(async req => {
+fetchMock.mockResponse(async (req) => {
   return JSON.stringify({});
 });
 
 // 2) stub out alert / prompt so they don’t interrupt the tests
-global.alert  = jest.fn();
+global.alert = jest.fn();
 global.prompt = jest.fn();
 
 // 3) minimal DOM stub that index.js expects
@@ -34,21 +34,21 @@ document.body.innerHTML = `
 
 // 4) ensure <svg> has dimensions
 Element.prototype.getBoundingClientRect = () => ({
-  width:  800,
+  width: 800,
   height: 600,
-  left:   0,
-  top:    0
+  left: 0,
+  top: 0,
 });
 
 // 5) load index.js via a VM sandbox so its top-level defs go into that sandbox
-const fs   = require('fs');
-const path = require('path');
-const vm   = require('vm');
+const fs = require("fs");
+const path = require("path");
+const vm = require("vm");
 
 // read your production code
 const code = fs.readFileSync(
-  path.resolve(__dirname, '../src/static/index.js'),
-  'utf8'
+  path.resolve(__dirname, "../src/static/index.js"),
+  "utf8",
 );
 
 // create a fresh sandbox and seed it with *all* current globals
@@ -61,7 +61,7 @@ for (const key of Object.getOwnPropertyNames(global)) {
 vm.createContext(sandbox);
 
 // run the code in that context
-vm.runInContext(code, sandbox, { filename: 'index.js' });
+vm.runInContext(code, sandbox, { filename: "index.js" });
 
 // copy *everything* from the sandbox back onto real globalThis
 // so tests can refer to getCurrentSheet(), projectPoint(), etc.

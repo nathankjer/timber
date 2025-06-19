@@ -4,7 +4,7 @@ import os
 import sys
 
 from flask import Flask, jsonify, render_template, request
-from flask_login import current_user, login_required
+from flask_login import current_user
 
 from timber import Joint, Load, Member, Model, Support, solve_with_diagnostics
 from timber.extensions import bcrypt, db, login_manager, migrate
@@ -20,7 +20,9 @@ def create_app(config_object: str | None = None) -> Flask:
     app = Flask(__name__, template_folder=template_root)
 
     # --- Configuration ------------------------------------------------
-    config_object = config_object or os.environ.get("FLASK_CONFIG", "config.DevelopmentConfig")
+    config_object = config_object or os.environ.get(
+        "FLASK_CONFIG", "config.DevelopmentConfig"
+    )
 
     if isinstance(config_object, str):
         sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -89,7 +91,9 @@ def create_app(config_object: str | None = None) -> Flask:
         res, issues = solve_with_diagnostics(model)
         return jsonify(
             {
-                "displacements": {str(k): list(v) for k, v in res.displacements.items()},
+                "displacements": {
+                    str(k): list(v) for k, v in res.displacements.items()
+                },
                 "reactions": {str(k): list(v) for k, v in res.reactions.items()},
                 "issues": issues,
             }

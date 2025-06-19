@@ -63,11 +63,25 @@ def _local_stiffness(E: float, A: float, I: float, L: float) -> np.ndarray:
     k = np.array(
         [
             [A * E / L, 0, 0, -A * E / L, 0, 0],
-            [0, 12 * E * I / L ** 3, 6 * E * I / L ** 2, 0, -12 * E * I / L ** 3, 6 * E * I / L ** 2],
-            [0, 6 * E * I / L ** 2, 4 * E * I / L, 0, -6 * E * I / L ** 2, 2 * E * I / L],
+            [
+                0,
+                12 * E * I / L**3,
+                6 * E * I / L**2,
+                0,
+                -12 * E * I / L**3,
+                6 * E * I / L**2,
+            ],
+            [0, 6 * E * I / L**2, 4 * E * I / L, 0, -6 * E * I / L**2, 2 * E * I / L],
             [-A * E / L, 0, 0, A * E / L, 0, 0],
-            [0, -12 * E * I / L ** 3, -6 * E * I / L ** 2, 0, 12 * E * I / L ** 3, -6 * E * I / L ** 2],
-            [0, 6 * E * I / L ** 2, 2 * E * I / L, 0, -6 * E * I / L ** 2, 4 * E * I / L],
+            [
+                0,
+                -12 * E * I / L**3,
+                -6 * E * I / L**2,
+                0,
+                12 * E * I / L**3,
+                -6 * E * I / L**2,
+            ],
+            [0, 6 * E * I / L**2, 2 * E * I / L, 0, -6 * E * I / L**2, 4 * E * I / L],
         ]
     )
     return k
@@ -87,7 +101,9 @@ def _transformation(c: float, s: float) -> np.ndarray:
     )
 
 
-def _assemble_matrices(model: Model) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def _assemble_matrices(
+    model: Model,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Build global stiffness and load matrices with boundary conditions."""
     n_joints = len(model.joints)
     dof = n_joints * 3
@@ -108,7 +124,7 @@ def _assemble_matrices(model: Model) -> tuple[np.ndarray, np.ndarray, np.ndarray
         j2 = model.joints[m.end]
         dx = j2.x - j1.x
         dy = j2.y - j1.y
-        L = (dx ** 2 + dy ** 2) ** 0.5
+        L = (dx**2 + dy**2) ** 0.5
         if L == 0:
             continue
         c = dx / L
@@ -116,7 +132,14 @@ def _assemble_matrices(model: Model) -> tuple[np.ndarray, np.ndarray, np.ndarray
         k_local = _local_stiffness(m.E, m.A, m.I, L)
         T = _transformation(c, s)
         k_global = T.T @ k_local @ T
-        dof_map = [m.start * 3, m.start * 3 + 1, m.start * 3 + 2, m.end * 3, m.end * 3 + 1, m.end * 3 + 2]
+        dof_map = [
+            m.start * 3,
+            m.start * 3 + 1,
+            m.start * 3 + 2,
+            m.end * 3,
+            m.end * 3 + 1,
+            m.end * 3 + 2,
+        ]
         for i_local, gi in enumerate(dof_map):
             for j_local, gj in enumerate(dof_map):
                 K_full[gi, gj] += k_global[i_local, j_local]
@@ -151,7 +174,6 @@ def solve(model: Model) -> Results:
     """Solve for nodal displacements and reactions."""
     K_full, F_ext, K, F = _assemble_matrices(model)
     n_joints = len(model.joints)
-    dof = n_joints * 3
 
     # Solve
     try:
@@ -165,7 +187,11 @@ def solve(model: Model) -> Results:
     reactions: Dict[int, Tuple[float, float, float]] = {}
     for i in range(n_joints):
         displacements[i] = (d[i * 3], d[i * 3 + 1], d[i * 3 + 2])
-        reactions[i] = (reactions_vec[i * 3], reactions_vec[i * 3 + 1], reactions_vec[i * 3 + 2])
+        reactions[i] = (
+            reactions_vec[i * 3],
+            reactions_vec[i * 3 + 1],
+            reactions_vec[i * 3 + 2],
+        )
 
     return Results(displacements=displacements, reactions=reactions)
 

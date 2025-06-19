@@ -7,7 +7,6 @@ from app import create_app
 from config import DevelopmentConfig
 from timber import Joint, Load, Member, Model, Support, solve
 from timber.extensions import db
-from timber.models import User
 
 
 class TestConfig(DevelopmentConfig):

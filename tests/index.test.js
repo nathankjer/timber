@@ -12,7 +12,6 @@
  * surface — functions and the DOM.
  */
 
-
 const {
   /* geometry */
   projectPoint,
@@ -65,58 +64,59 @@ const {
  */
 function resetScene() {
   // Reset view and camera state
-  setCurrentView('+X');
+  setCurrentView("+X");
   global.panX = 0;
   global.panY = 0;
   global.zoom = 1;
 
   // Clear relevant DOM elements
-  document.getElementById('solve-output').textContent = '';
-  document.getElementById('sheet-title').textContent = '';
-  document.getElementById('sheet-list').innerHTML = '';
+  document.getElementById("solve-output").textContent = "";
+  document.getElementById("sheet-title").textContent = "";
+  document.getElementById("sheet-list").innerHTML = "";
 }
-
 
 beforeEach(async () => {
   // Reset module state by loading empty sheet data
   fetch.resetMocks();
-  fetch.mockResponseOnce(JSON.stringify({ id: 1, name: 'Sheet 1', elements: [] }));
+  fetch.mockResponseOnce(
+    JSON.stringify({ id: 1, name: "Sheet 1", elements: [] }),
+  );
   // loadState will clear `elements` in the sandbox
   await loadState();
-  
+
   // Stub default fetch for other API calls
   fetch.resetMocks();
-  fetch.mockResponse('{}');
+  fetch.mockResponse("{}");
 
   // Reset view and camera
-  setCurrentView('+X');
+  setCurrentView("+X");
   global.panX = 0;
   global.panY = 0;
   global.zoom = 1;
 
   // Clear DOM text areas
-  document.getElementById('solve-output').textContent = '';
-  document.getElementById('sheet-title').textContent = '';
-  document.getElementById('sheet-list').innerHTML = '';
+  document.getElementById("solve-output").textContent = "";
+  document.getElementById("sheet-title").textContent = "";
+  document.getElementById("sheet-list").innerHTML = "";
 });
 
 //--------------------------------------------------------------------
 //  GEOMETRY HELPERS
 //--------------------------------------------------------------------
 
-describe('geometry helpers (pure maths)', () => {
+describe("geometry helpers (pure maths)", () => {
   test.each([
-    ['+X', { x: 1, y: 2, z: 3 }, { x: 2, y: -3 }],
-    ['-X', { x: 1, y: 2, z: 3 }, { x: -2, y: -3 }],
-    ['+Y', { x: 1, y: 2, z: 3 }, { x: 1,  y: -3 }],
-    ['-Z', { x: 1, y: 2, z: 3 }, { x: -1, y: -2 }],
-  ])('projectPoint for %s view', (view, p, expected) => {
+    ["+X", { x: 1, y: 2, z: 3 }, { x: 2, y: -3 }],
+    ["-X", { x: 1, y: 2, z: 3 }, { x: -2, y: -3 }],
+    ["+Y", { x: 1, y: 2, z: 3 }, { x: 1, y: -3 }],
+    ["-Z", { x: 1, y: 2, z: 3 }, { x: -1, y: -2 }],
+  ])("projectPoint for %s view", (view, p, expected) => {
     setCurrentView(view);
     expect(projectPoint(p)).toEqual(expected);
   });
 
-  test('unprojectDelta mirrors projectPoint along +X view', () => {
-    setCurrentView('+X');
+  test("unprojectDelta mirrors projectPoint along +X view", () => {
+    setCurrentView("+X");
     const res = unprojectDelta(5, 0); // dx ⇒ +y , dy ⇒ -z
     expect(res.y).toBeCloseTo(5);
     // JS distinguishes 0 and -0 when using Object.is, but for geometry any
@@ -124,14 +124,14 @@ describe('geometry helpers (pure maths)', () => {
     expect(Math.abs(res.z)).toBeLessThan(1e-12);
   });
 
-  test('screenCoords maps origin to canvas centre', () => {
+  test("screenCoords maps origin to canvas centre", () => {
     // Canvas size is stubbed to 800×600 in setupJest.
-    setCurrentView('+X');
+    setCurrentView("+X");
     const sc = screenCoords({ x: 0, y: 0, z: 0 });
     expect(sc).toMatchObject({ x: 400, y: 300 });
   });
 
-  test('distance helpers produce Euclidean metrics', () => {
+  test("distance helpers produce Euclidean metrics", () => {
     expect(distanceScreen({ x: 0, y: 0 }, { x: 3, y: 4 })).toBeCloseTo(5);
     const p = { x: 2, y: 0 };
     const a = { x: 0, y: 0 };
@@ -139,11 +139,14 @@ describe('geometry helpers (pure maths)', () => {
     expect(distanceToSegment2D(p, a, b)).toBe(0);
   });
 
-  test('axisInfo returns correct axes/signs for +Y', () => {
-    expect(axisInfo('+Y')).toEqual({ h: { axis: 'x', sign: 1 }, v: { axis: 'z', sign: -1 } });
+  test("axisInfo returns correct axes/signs for +Y", () => {
+    expect(axisInfo("+Y")).toEqual({
+      h: { axis: "x", sign: 1 },
+      v: { axis: "z", sign: -1 },
+    });
   });
 
-  test('nearestPointOnLine clamps to segment end when outside', () => {
+  test("nearestPointOnLine clamps to segment end when outside", () => {
     const a = { x: 0, y: 0, z: 0 };
     const b = { x: 1, y: 0, z: 0 };
     const p = { x: 10, y: 0, z: 0 };
@@ -155,25 +158,25 @@ describe('geometry helpers (pure maths)', () => {
 //  PLANE / SOLID HELPERS
 //--------------------------------------------------------------------
 
-describe('plane / solid helpers', () => {
-  test('planeCorners returns four corner points for Z‑normal', () => {
-    const el = { x: 0, y: 0, z: 0, length: 40, width: 20, normal: 'Z' };
+describe("plane / solid helpers", () => {
+  test("planeCorners returns four corner points for Z‑normal", () => {
+    const el = { x: 0, y: 0, z: 0, length: 40, width: 20, normal: "Z" };
     const corners = planeCorners(el);
     expect(corners).toHaveLength(4);
     expect(corners).toContainEqual({ x: -20, y: -10, z: 0 });
-    expect(corners).toContainEqual({ x: 20,  y:  10, z: 0 });
+    expect(corners).toContainEqual({ x: 20, y: 10, z: 0 });
   });
 
-  test('planeScreenRect projects correct pixel size in +Z view', () => {
-    setCurrentView('+Z');
-    const el = { x: 0, y: 0, z: 0, length: 40, width: 20, normal: 'Z' };
+  test("planeScreenRect projects correct pixel size in +Z view", () => {
+    setCurrentView("+Z");
+    const el = { x: 0, y: 0, z: 0, length: 40, width: 20, normal: "Z" };
     const rect = planeScreenRect(el);
     expect(rect.right - rect.left).toBeCloseTo(40 * global.zoom);
     expect(rect.bottom - rect.top).toBeCloseTo(20 * global.zoom);
   });
 
-  test('solidScreenRect projects correct face dims in +X view', () => {
-    setCurrentView('+X');
+  test("solidScreenRect projects correct face dims in +X view", () => {
+    setCurrentView("+X");
     const el = { x: 0, y: 0, z: 0, width: 20, height: 30, depth: 40 };
     const rect = solidScreenRect(el);
     expect(rect.right - rect.left).toBeCloseTo(30 * global.zoom); // height along Y
@@ -185,8 +188,8 @@ describe('plane / solid helpers', () => {
 //  SNAPPING UTILITIES
 //--------------------------------------------------------------------
 
-describe('snapping utilities', () => {
-  test('ensureJointAt creates exactly one joint at given coordinates', () => {
+describe("snapping utilities", () => {
+  test("ensureJointAt creates exactly one joint at given coordinates", () => {
     const jointsBefore = buildModel().joints.length;
     ensureJointAt(1, 2, 3);
     const jointsAfterFirst = buildModel().joints.length;
@@ -198,23 +201,23 @@ describe('snapping utilities', () => {
     expect(jointsAfterSecond).toBe(jointsAfterFirst);
   });
 
-  test('getSnapPoints collects points from various element types', () => {
-    addElement('Joint');
-    addElement('Load');
-    addElement('Member');
+  test("getSnapPoints collects points from various element types", () => {
+    addElement("Joint");
+    addElement("Load");
+    addElement("Member");
 
     const pts = getSnapPoints();
-    expect(pts.some(p => p.kind === 'Joint')).toBe(true);
-    expect(pts.some(p => p.kind === 'Load')).toBe(true);
-    expect(pts.some(p => p.kind === 'End')).toBe(true); // member ends
+    expect(pts.some((p) => p.kind === "Joint")).toBe(true);
+    expect(pts.some((p) => p.kind === "Load")).toBe(true);
+    expect(pts.some((p) => p.kind === "End")).toBe(true); // member ends
   });
 
-  test('getSnapLines returns member / load centre‑lines', () => {
-    addElement('Member');
+  test("getSnapLines returns member / load centre‑lines", () => {
+    addElement("Member");
     const lines = getSnapLines();
     expect(lines.length).toBeGreaterThanOrEqual(1);
-    expect(lines[0]).toHaveProperty('p1');
-    expect(lines[0]).toHaveProperty('p2');
+    expect(lines[0]).toHaveProperty("p1");
+    expect(lines[0]).toHaveProperty("p2");
   });
 });
 
@@ -222,12 +225,12 @@ describe('snapping utilities', () => {
 //  MODEL BUILDING
 //--------------------------------------------------------------------
 
-describe('buildModel', () => {
-  test('returns non‑empty arrays after adding typical elements', () => {
-    addElement('Joint');
-    addElement('Support');
-    addElement('Member');
-    addElement('Load');
+describe("buildModel", () => {
+  test("returns non‑empty arrays after adding typical elements", () => {
+    addElement("Joint");
+    addElement("Support");
+    addElement("Member");
+    addElement("Load");
 
     const model = buildModel();
     expect(model.joints.length).toBeGreaterThan(0);
@@ -241,17 +244,17 @@ describe('buildModel', () => {
 //  ELEMENT CREATION
 //--------------------------------------------------------------------
 
-describe('addElement API', () => {
+describe("addElement API", () => {
   test('addElement("Joint") increases joint count', () => {
     const before = buildModel().joints.length;
-    addElement('Joint');
+    addElement("Joint");
     const after = buildModel().joints.length;
     expect(after).toBe(before + 1);
   });
 
   test('addElement("Member") adds two joints (start & end)', () => {
     const before = buildModel().joints.length;
-    addElement('Member');
+    addElement("Member");
     const after = buildModel().joints.length;
     expect(after).toBe(before + 2);
   });
@@ -261,19 +264,19 @@ describe('addElement API', () => {
 //  SHEET / DOM HELPERS
 //--------------------------------------------------------------------
 
-describe('sheet helpers (DOM)', () => {
-  test('getCurrentSheet reads initial sheet correctly', () => {
-    expect(getCurrentSheet()).toEqual({ id: 1, name: 'Sheet 1' });
+describe("sheet helpers (DOM)", () => {
+  test("getCurrentSheet reads initial sheet correctly", () => {
+    expect(getCurrentSheet()).toEqual({ id: 1, name: "Sheet 1" });
   });
 
-  test('updateSheetHeader writes the sheet name into #sheet-title', () => {
+  test("updateSheetHeader writes the sheet name into #sheet-title", () => {
     updateSheetHeader();
-    expect(document.getElementById('sheet-title').textContent).toBe('Sheet 1');
+    expect(document.getElementById("sheet-title").textContent).toBe("Sheet 1");
   });
 
-  test('renderSheetList outputs one <li> for the initial sheet', () => {
+  test("renderSheetList outputs one <li> for the initial sheet", () => {
     renderSheetList();
-    const items = document.querySelectorAll('#sheet-list li.sheet-item');
+    const items = document.querySelectorAll("#sheet-list li.sheet-item");
     expect(items.length).toBe(1);
   });
 });
@@ -282,56 +285,68 @@ describe('sheet helpers (DOM)', () => {
 //  SERVER INTERACTIONS
 //--------------------------------------------------------------------
 
-describe('server round‑trips', () => {
-  test('saveState() POSTs to /sheet/action', async () => {
-    fetch.mockResponseOnce('{}');
+describe("server round‑trips", () => {
+  test("saveState() POSTs to /sheet/action", async () => {
+    fetch.mockResponseOnce("{}");
     await saveState();
     expect(fetch).toHaveBeenCalledWith(
-      '/sheet/action',
-      expect.objectContaining({ method: 'POST' }),
+      "/sheet/action",
+      expect.objectContaining({ method: "POST" }),
     );
   });
 
-  test('solveModel() prints “Displacements:” block on success', async () => {
+  test("solveModel() prints “Displacements:” block on success", async () => {
     fetch.mockResponseOnce(
       JSON.stringify({ displacements: { 0: [0, 0, 0] }, reactions: {} }),
     );
     await solveModel();
-    expect(document.getElementById('solve-output').textContent).toMatch(/Displacements:/);
+    expect(document.getElementById("solve-output").textContent).toMatch(
+      /Displacements:/,
+    );
   });
 
-  test('createSheet() adds a new sheet and updates DOM', async () => {
+  test("createSheet() adds a new sheet and updates DOM", async () => {
     fetch.mockResponses(
       // createSheet() → POST /sheet
-      [JSON.stringify({ id: 2, name: 'New Sheet' }), { status: 200 }],
+      [JSON.stringify({ id: 2, name: "New Sheet" }), { status: 200 }],
       // loadState() → GET /sheet/2
-      [JSON.stringify({ id: 2, name: 'New Sheet', elements: [] }), { status: 200 }],
+      [
+        JSON.stringify({ id: 2, name: "New Sheet", elements: [] }),
+        { status: 200 },
+      ],
     );
 
     await createSheet();
 
     // Two <li> items in the sheet list now.
-    expect(document.querySelectorAll('#sheet-list li.sheet-item').length).toBe(2);
+    expect(document.querySelectorAll("#sheet-list li.sheet-item").length).toBe(
+      2,
+    );
     expect(getCurrentSheet().id).toBe(2);
   });
 
-  test('deleteSheet() removes a sheet and falls back to first', async () => {
+  test("deleteSheet() removes a sheet and falls back to first", async () => {
     // First create a second sheet so we have something to delete.
     fetch.mockResponses(
-      [JSON.stringify({ id: 2, name: 'Temp' }), { status: 200 }], // createSheet
-      [JSON.stringify({ id: 2, name: 'Temp', elements: [] }), { status: 200 }], // loadState (after create)
+      [JSON.stringify({ id: 2, name: "Temp" }), { status: 200 }], // createSheet
+      [JSON.stringify({ id: 2, name: "Temp", elements: [] }), { status: 200 }], // loadState (after create)
     );
     await createSheet();
 
     // Stub out the DELETE and subsequent loadState()
     fetch.mockResponses(
-      ['', { status: 200 }], // deleteSheet
-      [JSON.stringify({ id: 1, name: 'Sheet 1', elements: [] }), { status: 200 }], // loadState (after delete)
+      ["", { status: 200 }], // deleteSheet
+      [
+        JSON.stringify({ id: 1, name: "Sheet 1", elements: [] }),
+        { status: 200 },
+      ], // loadState (after delete)
     );
 
     await deleteSheet(2);
 
-    expect(document.querySelectorAll('#sheet-list li.sheet-item').length).toBe(1);
+    expect(document.querySelectorAll("#sheet-list li.sheet-item").length).toBe(
+      1,
+    );
     expect(getCurrentSheet().id).toBe(1);
   });
 });
@@ -340,16 +355,16 @@ describe('server round‑trips', () => {
 //  WIDGETS
 //--------------------------------------------------------------------
 
-describe('addNumberInput widget', () => {
-  test('creates an <input> that mutates the supplied object', () => {
-    const container = document.createElement('div');
+describe("addNumberInput widget", () => {
+  test("creates an <input> that mutates the supplied object", () => {
+    const container = document.createElement("div");
     const obj = { foo: 0 };
 
-    addNumberInput(container, 'Foo', 'foo', obj);
+    addNumberInput(container, "Foo", "foo", obj);
 
-    const input = container.querySelector('input');
-    input.value = '123';
-    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const input = container.querySelector("input");
+    input.value = "123";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
 
     expect(obj.foo).toBe(123);
   });
