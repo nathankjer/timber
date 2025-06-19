@@ -914,6 +914,14 @@ function endPan() {
   document.removeEventListener("mouseup", endPan);
 }
 
+function onCanvasWheel(ev) {
+  if (!ev.shiftKey) return;
+  ev.preventDefault();
+  const factor = Math.exp(-ev.deltaY / 200);
+  zoom *= factor;
+  render();
+}
+
 async function saveState() {
   await fetch("/sheet/action", {
     method: "POST",
@@ -957,7 +965,8 @@ async function loadState() {
         obj.x2 = e.x2 ?? obj.x;
         obj.y2 = e.y2 ?? obj.y;
         obj.z2 = e.z2 ?? obj.z;
-        obj.amount = Math.hypot(obj.x2 - obj.x, obj.y2 - obj.y, obj.z2 - obj.z);
+        obj.amount =
+          e.amount ?? Math.hypot(obj.x2 - obj.x, obj.y2 - obj.y, obj.z2 - obj.z);
       } else if (obj.type === "Support") {
         obj.ux = e.ux !== false;
         obj.uy = e.uy !== false;
@@ -982,6 +991,7 @@ document.getElementById("canvas").addEventListener("click", () => {
   render();
 });
 document.getElementById("canvas").addEventListener("mousedown", startPan);
+document.getElementById("canvas").addEventListener("wheel", onCanvasWheel);
 document.getElementById("zoom-in").addEventListener("click", zoomIn);
 document.getElementById("zoom-out").addEventListener("click", zoomOut);
 document.getElementById("home-btn").addEventListener("click", resetPanZoom);

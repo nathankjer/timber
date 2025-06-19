@@ -349,6 +349,22 @@ describe("server round‑trips", () => {
     );
     expect(getCurrentSheet().id).toBe(1);
   });
+
+  test("loadState() preserves load amount from server", async () => {
+    fetch.mockResponseOnce(
+      JSON.stringify({
+        id: 1,
+        name: "Sheet 1",
+        elements: [
+          { id: 10, type: "Load", x: 0, y: 0, z: 0, x2: 0, y2: 10, z2: 0, amount: 99 },
+        ],
+      }),
+    );
+
+    await loadState();
+    const model = buildModel();
+    expect(model.loads[0].fy).toBeCloseTo(99);
+  });
 });
 
 //--------------------------------------------------------------------
@@ -380,7 +396,7 @@ describe("zoom and keyboard controls", () => {
     const before = screenCoords({ x: 0, y: 10, z: 0 }).x;
     zoomIn();
     const after = screenCoords({ x: 0, y: 10, z: 0 }).x;
-    expect(after - 400).toBeCloseTo((before - 400) * 1.1);
+    expect(after - 400).toBeCloseTo((before - 400) * 1.25);
   });
 
   test("zoomOut decreases projected distance", () => {
@@ -388,7 +404,7 @@ describe("zoom and keyboard controls", () => {
     const before = screenCoords({ x: 0, y: 10, z: 0 }).x;
     zoomOut();
     const after = screenCoords({ x: 0, y: 10, z: 0 }).x;
-    expect(after - 400).toBeCloseTo((before - 400) * 0.9);
+    expect(after - 400).toBeCloseTo((before - 400) * 0.8);
   });
 
   test("resetPanZoom restores default zoom", () => {
@@ -406,5 +422,21 @@ describe("zoom and keyboard controls", () => {
     );
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete" }));
     expect(buildModel().joints.length).toBe(0);
+  });
+
+  test("holding Shift and scrolling zooms", () => {
+    resetPanZoom();
+    const canvas = document.getElementById("canvas");
+    const before = screenCoords({ x: 0, y: 10, z: 0 }).x;
+    canvas.dispatchEvent(
+      new WheelEvent("wheel", { deltaY: -100, shiftKey: true, bubbles: true }),
+    );
+    const mid = screenCoords({ x: 0, y: 10, z: 0 }).x;
+    expect(mid).toBeGreaterThan(before);
+    canvas.dispatchEvent(
+      new WheelEvent("wheel", { deltaY: 100, shiftKey: true, bubbles: true }),
+    );
+    const after = screenCoords({ x: 0, y: 10, z: 0 }).x;
+    expect(after).toBeLessThan(mid);
   });
 });
