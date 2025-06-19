@@ -4,9 +4,6 @@ fetchMock.enableMocks();
 
 // 1) default every fetch to valid JSON
 fetchMock.mockResponse(async req => {
-  if (req.url.match(/^\/sheet\/\\d+$/)) {
-    return JSON.stringify({ id: 1, name: 'Sheet 1', elements: [] });
-  }
   return JSON.stringify({});
 });
 
