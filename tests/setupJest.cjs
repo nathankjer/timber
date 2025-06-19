@@ -22,6 +22,11 @@ document.body.innerHTML = `
     <button class="view-btn" data-view="+X"></button>
     <button class="view-btn" data-view="-X"></button>
   </div>
+  <div class="btn-group">
+    <button id="zoom-in"></button>
+    <button id="zoom-out"></button>
+    <button id="home-btn"></button>
+  </div>
   <span id="current-view">+X</span>
   <svg    id="canvas"></svg>
   <select id="element-type"></select>

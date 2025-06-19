@@ -38,6 +38,23 @@ let panStartX = 0;
 let panStartY = 0;
 let panOrigX = 0;
 let panOrigY = 0;
+
+function zoomIn() {
+  zoom *= 1.1;
+  render();
+}
+
+function zoomOut() {
+  zoom *= 0.9;
+  render();
+}
+
+function resetPanZoom() {
+  zoom = 1;
+  panX = 0;
+  panY = 0;
+  render();
+}
 const globalProps = { g: 9.81, units: "metric" };
 const PROP_LABELS = {
   E: "Young's Modulus",
@@ -965,10 +982,13 @@ document.getElementById("canvas").addEventListener("click", () => {
   render();
 });
 document.getElementById("canvas").addEventListener("mousedown", startPan);
-document.getElementById("canvas").addEventListener("wheel", (ev) => {
-  ev.preventDefault();
-  zoom *= ev.deltaY < 0 ? 1.1 : 0.9;
-  render();
+document.getElementById("zoom-in").addEventListener("click", zoomIn);
+document.getElementById("zoom-out").addEventListener("click", zoomOut);
+document.getElementById("home-btn").addEventListener("click", resetPanZoom);
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Delete") {
+    deleteElement();
+  }
 });
 
 document.getElementById("edit-title").addEventListener("click", async () => {
