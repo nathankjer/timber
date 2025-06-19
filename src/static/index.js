@@ -40,12 +40,12 @@ let panOrigX = 0;
 let panOrigY = 0;
 
 function zoomIn() {
-  zoom *= 1.1;
+  zoom *= 1.25;
   render();
 }
 
 function zoomOut() {
-  zoom *= 0.9;
+  zoom /= 1.25;
   render();
 }
 
@@ -986,7 +986,7 @@ document.getElementById("zoom-in").addEventListener("click", zoomIn);
 document.getElementById("zoom-out").addEventListener("click", zoomOut);
 document.getElementById("home-btn").addEventListener("click", resetPanZoom);
 document.addEventListener("keydown", (ev) => {
-  if (ev.key === "Delete") {
+  if (ev.key === "Delete" || ev.key === "Backspace" || ev.key === "Del") {
     deleteElement();
   }
 });
