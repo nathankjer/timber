@@ -18,6 +18,11 @@ let dragStartX = 0;
 let dragStartY = 0;
 let dragOrig = null;
 let dragMode = "body";
+
+let nextId = Date.now();
+function generateId() {
+  return nextId++;
+}
 // Use `var` so `currentView` becomes a property of the global object.
 // This allows tests (which run the file in a VM sandbox) to mutate
 // `currentView` by assigning to `global.currentView`.
@@ -334,7 +339,7 @@ function ensureJointAt(x, y, z) {
     )
   )
     return;
-  elements.push({ id: Date.now() + Math.random(), type: "Joint", x, y, z });
+  elements.push({ id: generateId(), type: "Joint", x, y, z });
 }
 
 function applySnapping(el) {
@@ -628,7 +633,7 @@ function render(updateProps = true) {
 }
 
 function addElement(type) {
-  const id = Date.now();
+  const id = generateId();
   const center = unprojectDelta(-panX / zoom, -panY / zoom);
   const base = {
     id,
@@ -943,6 +948,8 @@ async function loadState() {
       }
       return obj;
     });
+    let maxId = elements.reduce((m, e) => Math.max(m, e.id), 0);
+    nextId = Math.max(Date.now(), maxId + 1);
     updateSheetHeader();
     render();
   }
