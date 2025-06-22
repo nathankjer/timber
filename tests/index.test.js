@@ -296,7 +296,7 @@ describe("server round‑trips", () => {
     );
   });
 
-  test("solveModel() prints "Displacements:" block on success", async () => {
+  test("solveModel() prints 'Displacements:' block on success", async () => {
     fetch.mockResponseOnce(
       JSON.stringify({ displacements: { 0: [0, 0, 0] }, reactions: {} }),
     );
