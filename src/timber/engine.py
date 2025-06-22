@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Dict, Tuple
 import numpy as np
+from .units import get_unit_manager, format_length, format_force, format_moment, format_stress, format_area, format_moment_of_inertia
 
 
 @dataclass
@@ -58,6 +59,37 @@ class Model:
 class Results:
     displacements: Dict[int, Tuple[float, float, float]]
     reactions: Dict[int, Tuple[float, float, float]]
+    unit_system: str = "metric"
+    
+    def format_displacement(self, point_id: int, component: str) -> str:
+        """Format a displacement component with units."""
+        if point_id not in self.displacements:
+            return "N/A"
+        
+        disp = self.displacements[point_id]
+        if component == "ux":
+            return format_length(disp[0])
+        elif component == "uy":
+            return format_length(disp[1])
+        elif component == "rz":
+            return f"{disp[2]:.6f} rad"
+        else:
+            return "N/A"
+    
+    def format_reaction(self, point_id: int, component: str) -> str:
+        """Format a reaction component with units."""
+        if point_id not in self.reactions:
+            return "N/A"
+        
+        react = self.reactions[point_id]
+        if component == "fx":
+            return format_force(react[0])
+        elif component == "fy":
+            return format_force(react[1])
+        elif component == "mz":
+            return format_moment(react[2])
+        else:
+            return "N/A"
 
 
 def _local_stiffness(E: float, A: float, I: float, L: float) -> np.ndarray:
@@ -211,7 +243,8 @@ def solve(model: Model) -> Results:
             reactions_vec[i * 3 + 2],
         )
 
-    return Results(displacements=displacements, reactions=reactions)
+    unit_manager = get_unit_manager()
+    return Results(displacements=displacements, reactions=reactions, unit_system=unit_manager.system)
 
 
 def solve_with_diagnostics(model: Model) -> tuple[Results, List[str]]:
@@ -237,7 +270,8 @@ def solve_with_diagnostics(model: Model) -> tuple[Results, List[str]]:
             reactions_vec[i * 3 + 2],
         )
 
-    res = Results(displacements=displacements, reactions=reactions)
+    unit_manager = get_unit_manager()
+    res = Results(displacements=displacements, reactions=reactions, unit_system=unit_manager.system)
 
     issues: List[str] = []
     if singular or np.linalg.matrix_rank(K) < K.shape[0]:

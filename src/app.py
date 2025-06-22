@@ -8,6 +8,7 @@ from flask_login import current_user
 
 from timber import Point, Load, Member, Model, Support, solve_with_diagnostics
 from timber.extensions import bcrypt, db, login_manager, migrate
+from timber.units import set_unit_system, get_unit_system, UnitSystem
 
 # -------------------------------------------------------------------
 # Module-level extensions are defined in timber.extensions
@@ -72,12 +73,21 @@ def create_app(config_object: str | None = None) -> Flask:
         """
         Solve a structural model sent as JSON.
         Expects keys: points, members, loads, supports (each a list of dicts).
-        Returns JSON with 'displacements' and 'reactions'.
+        Optional: unit_system ("metric" or "imperial")
+        Returns JSON with 'displacements', 'reactions', 'issues', and 'unit_system'.
         """
         if not request.is_json:
             return jsonify({"error": "JSON body required"}), 400
 
         data = request.get_json()
+        
+        # Set unit system if provided
+        unit_system = data.get("unit_system", "metric")
+        if unit_system not in ["metric", "imperial"]:
+            return jsonify({"error": "Invalid unit_system. Must be 'metric' or 'imperial'"}), 400
+        
+        set_unit_system(unit_system)
+        
         try:
             model = Model(
                 points=[Point(**p) for p in data.get("points", [])],
@@ -89,13 +99,32 @@ def create_app(config_object: str | None = None) -> Flask:
             return jsonify({"error": f"Invalid payload: {exc}"}), 400
 
         res, issues = solve_with_diagnostics(model)
+        
+        # Format results with units
+        formatted_displacements = {}
+        for point_id, disp in res.displacements.items():
+            formatted_displacements[str(point_id)] = {
+                "ux": res.format_displacement(point_id, "ux"),
+                "uy": res.format_displacement(point_id, "uy"),
+                "rz": res.format_displacement(point_id, "rz"),
+                "raw": list(disp)  # Keep raw values for compatibility
+            }
+        
+        formatted_reactions = {}
+        for point_id, react in res.reactions.items():
+            formatted_reactions[str(point_id)] = {
+                "fx": res.format_reaction(point_id, "fx"),
+                "fy": res.format_reaction(point_id, "fy"),
+                "mz": res.format_reaction(point_id, "mz"),
+                "raw": list(react)  # Keep raw values for compatibility
+            }
+        
         return jsonify(
             {
-                "displacements": {
-                    str(k): list(v) for k, v in res.displacements.items()
-                },
-                "reactions": {str(k): list(v) for k, v in res.reactions.items()},
+                "displacements": formatted_displacements,
+                "reactions": formatted_reactions,
                 "issues": issues,
+                "unit_system": res.unit_system,
             }
         )
 

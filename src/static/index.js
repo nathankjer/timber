@@ -523,13 +523,110 @@ function applySnapping(el) {
   }
 }
 
-function addNumberInput(container, label, prop, el) {
+function addNumberInput(container, label, prop, el, unitType = null) {
   const div = document.createElement("div");
   div.className = "mb-2";
-  div.innerHTML = `<label class='form-label'>${label}</label><input id='prop-${prop}' class='form-control form-control-sm' type='number' value='${el[prop] ?? 0}'>`;
+  
+  // Get current value and format with units if applicable
+  let currentValue = el[prop] ?? 0;
+  let displayValue = currentValue;
+  let unitSymbol = "";
+  
+  if (unitType) {
+    const unitSystem = globalProps.units || "metric";
+    if (unitType === "length") {
+      unitSymbol = unitSystem === "metric" ? "mm" : "in";
+      displayValue = unitSystem === "metric" ? (currentValue * 1000).toFixed(3) : (currentValue * 39.3701).toFixed(3);
+    } else if (unitType === "force") {
+      unitSymbol = unitSystem === "metric" ? "kN" : "kip";
+      displayValue = unitSystem === "metric" ? (currentValue / 1000).toFixed(3) : (currentValue / 4448.22).toFixed(3);
+    } else if (unitType === "stress") {
+      unitSymbol = unitSystem === "metric" ? "GPa" : "ksi";
+      displayValue = unitSystem === "metric" ? (currentValue / 1e9).toFixed(3) : (currentValue / 6894760.0).toFixed(3);
+    } else if (unitType === "area") {
+      unitSymbol = unitSystem === "metric" ? "mm²" : "in²";
+      displayValue = unitSystem === "metric" ? (currentValue * 1e6).toFixed(3) : (currentValue * 1550.0031).toFixed(3);
+    } else if (unitType === "moment_of_inertia") {
+      unitSymbol = unitSystem === "metric" ? "mm⁴" : "in⁴";
+      displayValue = unitSystem === "metric" ? (currentValue * 1e12).toFixed(3) : (currentValue * 2.4025e9).toFixed(3);
+    } else if (unitType === "acceleration") {
+      unitSymbol = unitSystem === "metric" ? "m/s²" : "ft/s²";
+      displayValue = unitSystem === "metric" ? currentValue.toFixed(3) : (currentValue * 3.28084).toFixed(3);
+    }
+  }
+  
+  // Create input with unit label
+  if (unitType) {
+    div.innerHTML = `
+      <label class='form-label'>${label}</label>
+      <div class='input-group input-group-sm'>
+        <input id='prop-${prop}' class='form-control' type='text' value='${displayValue}'>
+        <span class='input-group-text'>${unitSymbol}</span>
+      </div>
+    `;
+  } else {
+    div.innerHTML = `<label class='form-label'>${label}</label><input id='prop-${prop}' class='form-control form-control-sm' type='text' value='${displayValue}'>`;
+  }
+  
   const input = div.querySelector("input");
   input.addEventListener("input", (ev) => {
-    const v = parseFloat(ev.target.value);
+    const text = ev.target.value;
+    let v;
+    
+    if (unitType) {
+      try {
+        // Parse value without units (units are now in static label)
+        const unitSystem = globalProps.units || "metric";
+        if (unitType === "length") {
+          v = parseFloat(text);
+          if (unitSystem === "metric") {
+            v = v / 1000; // Convert mm to m
+          } else {
+            v = v / 39.3701; // Convert in to m
+          }
+        } else if (unitType === "force") {
+          v = parseFloat(text);
+          if (unitSystem === "metric") {
+            v = v * 1000; // Convert kN to N
+          } else {
+            v = v * 4448.22; // Convert kip to N
+          }
+        } else if (unitType === "stress") {
+          v = parseFloat(text);
+          if (unitSystem === "metric") {
+            v = v * 1e9; // Convert GPa to Pa
+          } else {
+            v = v * 6894760.0; // Convert ksi to Pa
+          }
+        } else if (unitType === "area") {
+          v = parseFloat(text);
+          if (unitSystem === "metric") {
+            v = v / 1e6; // Convert mm² to m²
+          } else {
+            v = v / 1550.0031; // Convert in² to m²
+          }
+        } else if (unitType === "moment_of_inertia") {
+          v = parseFloat(text);
+          if (unitSystem === "metric") {
+            v = v / 1e12; // Convert mm⁴ to m⁴
+          } else {
+            v = v / 2.4025e9; // Convert in⁴ to m⁴
+          }
+        } else if (unitType === "acceleration") {
+          v = parseFloat(text);
+          if (unitSystem === "metric") {
+            v = v; // Already in m/s²
+          } else {
+            v = v / 3.28084; // Convert ft/s² to m/s²
+          }
+        }
+      } catch (e) {
+        v = 0;
+      }
+    } else {
+      v = parseFloat(text);
+    }
+    
     el[prop] = Number.isFinite(v) ? v : 0;
     render(false);
     saveState();
@@ -545,21 +642,22 @@ function renderProperties() {
     if (el) {
       const form = document.createElement("div");
       form.innerHTML = `<div class="mb-2">Type: <strong>${el.type}</strong></div>`;
-      ["x", "y", "z"].forEach((p) => addNumberInput(form, p, p, el));
+      ["x", "y", "z"].forEach((p) => addNumberInput(form, p, p, el, "length"));
       if (el.type === "Member" || el.type === "Cable" || el.type === "Load") {
-        ["x2", "y2", "z2"].forEach((p) => addNumberInput(form, p, p, el));
+        ["x2", "y2", "z2"].forEach((p) => addNumberInput(form, p, p, el, "length"));
       }
       if (el.type === "Member" || el.type === "Cable") {
-        ["E", "A", "I"].forEach((p) =>
-          addNumberInput(form, `${PROP_LABELS[p]} (${p})`, p, el),
-        );
+        addNumberInput(form, "Young's Modulus (E)", "E", el, "stress");
+        addNumberInput(form, "Cross Sectional Area (A)", "A", el, "area");
+        addNumberInput(form, "Second Moment of Inertia (I)", "I", el, "moment_of_inertia");
       }
       if (el.type === "Plane") {
-        ["length", "width"].forEach((p) => addNumberInput(form, p, p, el));
+        addNumberInput(form, "length", "length", el, "length");
+        addNumberInput(form, "width", "width", el, "length");
       } else if (el.type === "Solid") {
-        ["width", "height", "depth"].forEach((p) =>
-          addNumberInput(form, p, p, el),
-        );
+        addNumberInput(form, "width", "width", el, "length");
+        addNumberInput(form, "height", "height", el, "length");
+        addNumberInput(form, "depth", "depth", el, "length");
       } else if (el.type === "Support") {
         ["ux", "uy", "rz"].forEach((p) => {
           const div = document.createElement("div");
@@ -574,8 +672,7 @@ function renderProperties() {
           form.appendChild(div);
         });
       } else if (el.type === "Load") {
-        const unit = globalProps.units === "metric" ? "N" : "lb";
-        addNumberInput(form, `amount (${unit})`, "amount", el);
+        addNumberInput(form, "amount", "amount", el, "force");
       }
       pane.appendChild(form);
       document.getElementById("delete-btn").disabled = false;
@@ -586,28 +683,56 @@ function renderProperties() {
 
   const globalDiv = document.createElement("div");
   globalDiv.innerHTML = `<hr><h6>Global</h6>
-    <div class='mb-2'><label class='form-label'>g</label><input id='global-g' class='form-control form-control-sm' type='number' value='${globalProps.g}'></div>
     <div class='mb-2'><label class='form-label'>Units</label><select id='global-units' class='form-select form-select-sm'>
       <option value='metric'>Metric</option><option value='imperial'>Imperial</option></select></div>`;
   pane.appendChild(globalDiv);
-  const gInput = globalDiv.querySelector("#global-g");
+  
+  // Add gravity input with units
+  const gravityDiv = document.createElement("div");
+  gravityDiv.className = "mb-2";
+  const unitSystem = globalProps.units || "metric";
+  const gravityUnit = unitSystem === "metric" ? "m/s²" : "ft/s²";
+  const gravityValue = unitSystem === "metric" ? globalProps.g.toFixed(3) : (globalProps.g * 3.28084).toFixed(3);
+  
+  gravityDiv.innerHTML = `
+    <label class='form-label'>Gravity (g)</label>
+    <div class='input-group input-group-sm'>
+      <input id='global-g' class='form-control' type='text' value='${gravityValue}'>
+      <span class='input-group-text'>${gravityUnit}</span>
+    </div>
+  `;
+  pane.appendChild(gravityDiv);
+  
+  const gInput = gravityDiv.querySelector("#global-g");
   gInput.addEventListener("input", (ev) => {
-    const v = parseFloat(ev.target.value);
-    globalProps.g = Number.isFinite(v) ? v : 0;
+    const text = ev.target.value;
+    let v = parseFloat(text);
+    
+    if (Number.isFinite(v)) {
+      const unitSystem = globalProps.units || "metric";
+      if (unitSystem === "metric") {
+        globalProps.g = v; // Already in m/s²
+      } else {
+        globalProps.g = v / 3.28084; // Convert ft/s² to m/s²
+      }
+    }
   });
+  
   const sel = globalDiv.querySelector("#global-units");
   sel.value = globalProps.units;
   sel.addEventListener("change", (ev) => {
     const old = globalProps.units;
     globalProps.units = ev.target.value;
     if (old !== globalProps.units) {
+      // Convert gravity value
       if (globalProps.units === "metric") {
-        globalProps.g /= 3.28084;
+        globalProps.g = 9.81; // m/s²
       } else {
-        globalProps.g *= 3.28084;
+        globalProps.g = 32.174; // ft/s²
       }
+      // Re-render properties to update unit displays
+      renderProperties();
     }
-    renderProperties();
   });
 }
 
@@ -1265,6 +1390,11 @@ function buildModel() {
 async function solveModel() {
   const payload = buildModel();
   console.log("Solving model:", payload);
+  
+  // Add unit system to payload
+  const unitSystem = globalProps.units || "metric";
+  payload.unit_system = unitSystem;
+  
   const resp = await fetch("/solve", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1281,7 +1411,8 @@ async function solveModel() {
   lastCalculationResults = {
     displacements: data.displacements || {},
     reactions: data.reactions || {},
-    points: payload.points
+    points: payload.points,
+    unit_system: data.unit_system
   };
   
   const lines = [];
@@ -1315,18 +1446,13 @@ async function solveModel() {
   if (displacements.length === 0) {
     lines.push("  No displacement results available.");
   } else {
-    for (const [pointId, v] of displacements) {
+    for (const [pointId, dispData] of displacements) {
       const point = payload.points.find(p => p.id === parseInt(pointId));
       if (point) {
-        const [ux, uy, rz] = v;
-        const ux_mm = ux * 1000; // Convert to mm
-        const uy_mm = uy * 1000; // Convert to mm
-        const rz_deg = rz * 180 / Math.PI; // Convert to degrees
-        
         lines.push(`  Point ${pointId} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)}):`);
-        lines.push(`    Horizontal displacement (ux): ${ux_mm.toFixed(6)} mm`);
-        lines.push(`    Vertical displacement (uy): ${uy_mm.toFixed(6)} mm`);
-        lines.push(`    Rotation (rz): ${rz_deg.toFixed(6)} degrees`);
+        lines.push(`    Horizontal displacement (ux): ${dispData.ux}`);
+        lines.push(`    Vertical displacement (uy): ${dispData.uy}`);
+        lines.push(`    Rotation (rz): ${dispData.rz}`);
         lines.push("");
       }
     }
@@ -1339,18 +1465,13 @@ async function solveModel() {
   if (reactions.length === 0) {
     lines.push("  No reaction results available.");
   } else {
-    for (const [pointId, v] of reactions) {
+    for (const [pointId, reactData] of reactions) {
       const point = payload.points.find(p => p.id === parseInt(pointId));
       if (point) {
-        const [fx, fy, mz] = v;
-        const fx_kN = fx / 1000; // Convert to kN
-        const fy_kN = fy / 1000; // Convert to kN
-        const mz_kNm = mz / 1000; // Convert to kN·m
-        
         lines.push(`  Point ${pointId} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)}):`);
-        lines.push(`    Horizontal force (fx): ${fx_kN.toFixed(6)} kN`);
-        lines.push(`    Vertical force (fy): ${fy_kN.toFixed(6)} kN`);
-        lines.push(`    Moment (mz): ${mz_kNm.toFixed(6)} kN·m`);
+        lines.push(`    Horizontal force (fx): ${reactData.fx}`);
+        lines.push(`    Vertical force (fy): ${reactData.fy}`);
+        lines.push(`    Moment (mz): ${reactData.mz}`);
         lines.push("");
       }
     }
@@ -1368,8 +1489,13 @@ async function solveModel() {
       if (point) {
         const magnitude = Math.sqrt(load.fx * load.fx + load.fy * load.fy);
         const angle = Math.atan2(load.fy, load.fx) * 180 / Math.PI;
+        const unitSystem = data.unit_system || "metric";
+        const forceUnit = unitSystem === "metric" ? "kN" : "kip";
+        const magnitudeFormatted = unitSystem === "metric" ? 
+          (magnitude / 1000).toFixed(6) : (magnitude / 4448.22).toFixed(6);
+        
         lines.push(`  Load ${i + 1} at Point ${load.point} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}):`);
-        lines.push(`    Magnitude: ${magnitude.toFixed(6)} N`);
+        lines.push(`    Magnitude: ${magnitudeFormatted} ${forceUnit}`);
         lines.push(`    Direction: ${angle.toFixed(2)}° from horizontal`);
         lines.push(`    Components: fx = ${load.fx.toFixed(6)} N, fy = ${load.fy.toFixed(6)} N`);
         lines.push("");
@@ -1413,11 +1539,25 @@ async function solveModel() {
           Math.pow(endPoint.x - startPoint.x, 2) + 
           Math.pow(endPoint.y - startPoint.y, 2)
         );
+        const unitSystem = data.unit_system || "metric";
+        const lengthUnit = unitSystem === "metric" ? "mm" : "in";
+        const lengthFormatted = unitSystem === "metric" ? 
+          (length * 1000).toFixed(6) : (length * 39.3701).toFixed(6);
+        const stressUnit = unitSystem === "metric" ? "GPa" : "ksi";
+        const EFormatted = unitSystem === "metric" ? 
+          (member.E / 1e9).toFixed(3) : (member.E / 6894760.0).toFixed(3);
+        const areaUnit = unitSystem === "metric" ? "mm²" : "in²";
+        const AFormatted = unitSystem === "metric" ? 
+          (member.A * 1e6).toFixed(3) : (member.A * 1550.0031).toFixed(3);
+        const inertiaUnit = unitSystem === "metric" ? "mm⁴" : "in⁴";
+        const IFormatted = unitSystem === "metric" ? 
+          (member.I * 1e12).toFixed(3) : (member.I * 2.4025e9).toFixed(3);
+        
         lines.push(`  Member ${i + 1} (Points ${member.start} → ${member.end}):`);
-        lines.push(`    Length: ${length.toFixed(6)} m`);
-        lines.push(`    Young's Modulus (E): ${member.E.toExponential(3)} Pa`);
-        lines.push(`    Cross-sectional Area (A): ${member.A.toExponential(3)} m²`);
-        lines.push(`    Second Moment of Inertia (I): ${member.I.toExponential(3)} m⁴`);
+        lines.push(`    Length: ${lengthFormatted} ${lengthUnit}`);
+        lines.push(`    Young's Modulus (E): ${EFormatted} ${stressUnit}`);
+        lines.push(`    Cross-sectional Area (A): ${AFormatted} ${areaUnit}`);
+        lines.push(`    Second Moment of Inertia (I): ${IFormatted} ${inertiaUnit}`);
         lines.push("");
       }
     }
@@ -1493,21 +1633,56 @@ function renderCalculationResults() {
     const point = points.find(p => p.id === parseInt(pointId));
     if (!point) return;
     
-    const [fx, fy, mz] = v;
+    let fx, fy, mz;
+    
+    // Handle different response formats
+    if (v && typeof v === 'object') {
+      if (Array.isArray(v)) {
+        // Direct array format
+        [fx, fy, mz] = v;
+      } else if (v.raw && Array.isArray(v.raw)) {
+        // New format with raw values
+        [fx, fy, mz] = v.raw;
+      } else if (v.fx !== undefined && v.fy !== undefined && v.mz !== undefined) {
+        // Object format with fx, fy, mz properties
+        fx = v.fx;
+        fy = v.fy;
+        mz = v.mz;
+      } else {
+        // Skip if we can't extract force components
+        return;
+      }
+    } else {
+      // Skip if not an object
+      return;
+    }
+    
     const magnitude = Math.sqrt(fx * fx + fy * fy);
     if (magnitude < 1e-6) return; // Skip very small reactions
     
-    const p = projectPoint({ x: point.x, y: point.y, z: point.z });
-    const sx = cx + (p.x || 0) * zoom;
-    const sy = cy + (p.y || 0) * zoom;
+    // Define the vector in 3D world space
+    const world_scale = 0.001 * 20; // Scale for visualization (was 0.001 * 0.1)
+    const start_3d = { x: point.x, y: point.y, z: point.z };
+    const end_3d = {
+      x: point.x + fx * world_scale,
+      y: point.y + fy * world_scale,
+      z: point.z, // fz is 0 in 2D analysis
+    };
     
-    // Scale reaction for visualization (convert to kN and scale)
-    const scale = 0.001 * 0.1; // Convert N to kN and scale down
-    const dx = fx * scale * zoom;
-    const dy = fy * scale * zoom;
+    // Project both points to screen space. `screenCoords` handles zoom/pan.
+    const start_screen = screenCoords(start_3d);
+    const end_screen = screenCoords(end_3d);
     
     // Draw reaction vector
-    renderForceVector(resultsGroup, sx, sy, sx + dx, sy + dy, "darkgray", 0.8);
+    renderForceVector(
+      resultsGroup,
+      start_screen.x,
+      start_screen.y,
+      end_screen.x,
+      end_screen.y,
+      "darkgray",
+      0.8,
+    );
   });
 }
 
