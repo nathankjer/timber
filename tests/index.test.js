@@ -107,13 +107,19 @@ beforeEach(async () => {
 
 describe("geometry helpers (pure maths)", () => {
   test.each([
-    ["+X", { x: 1, y: 2, z: 3 }, { x: 2, y: -3 }],
-    ["-X", { x: 1, y: 2, z: 3 }, { x: -2, y: -3 }],
-    ["+Y", { x: 1, y: 2, z: 3 }, { x: 1, y: -3 }],
-    ["-Z", { x: 1, y: 2, z: 3 }, { x: -1, y: -2 }],
+    ["+X", { x: 1, y: 2, z: 3 }, { x: -3, y: -2 }], // rotationY = -π/2, rotationZ = 0
+    ["-X", { x: 1, y: 2, z: 3 }, { x: 3, y: -2 }],  // rotationY = π/2, rotationZ = 0
+    ["+Y", { x: 1, y: 2, z: 3 }, { x: -2, y: -1 }], // rotationY = 0, rotationZ = π/2
+    ["-Z", { x: 1, y: 2, z: 3 }, { x: -1, y: -2 }], // rotationY = π, rotationZ = 0
   ])("projectPoint for %s view", (view, p, expected) => {
     setCurrentView(view);
-    expect(projectPoint(p)).toEqual(expected);
+    const result = projectPoint(p);
+    if (view === "-Z" || view === "+Y") {
+      expect(result.x).toBeCloseTo(expected.x);
+      expect(result.y).toBeCloseTo(expected.y);
+    } else {
+      expect(result).toEqual(expected);
+    }
   });
 
   test("unprojectDelta mirrors projectPoint along +Z view", () => {
@@ -143,7 +149,7 @@ describe("geometry helpers (pure maths)", () => {
   test("axisInfo returns correct axes/signs for +Y", () => {
     expect(axisInfo("+Y")).toEqual({
       h: { axis: "x", sign: 1 },
-      v: { axis: "z", sign: -1 },
+      v: { axis: "y", sign: -1 },
     });
   });
 

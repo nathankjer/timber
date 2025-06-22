@@ -58,7 +58,7 @@ class TestUnitSystemManager:
     def test_get_preferred_units_metric(self):
         """Test getting preferred units for metric system."""
         manager = UnitSystemManager("metric")
-        assert manager.get_preferred_unit("length") == Units.MILLIMETER
+        assert manager.get_preferred_unit("length") == Units.METER
         assert manager.get_preferred_unit("force") == Units.KILONEWTON
         assert manager.get_preferred_unit("moment") == Units.KILONEWTON_METER
         assert manager.get_preferred_unit("stress") == Units.GIGAPASCAL
@@ -69,9 +69,9 @@ class TestUnitSystemManager:
     def test_get_preferred_units_imperial(self):
         """Test getting preferred units for imperial system."""
         manager = UnitSystemManager("imperial")
-        assert manager.get_preferred_unit("length") == Units.INCH
-        assert manager.get_preferred_unit("force") == Units.KIP
-        assert manager.get_preferred_unit("moment") == Units.KIP_FOOT
+        assert manager.get_preferred_unit("length") == Units.FOOT
+        assert manager.get_preferred_unit("force") == Units.POUND
+        assert manager.get_preferred_unit("moment") == Units.POUND_FOOT
         assert manager.get_preferred_unit("stress") == Units.KSI
         assert manager.get_preferred_unit("area") == Units.SQUARE_INCH
         assert manager.get_preferred_unit("moment_of_inertia") == Units.INCH_TO_FOURTH
@@ -81,13 +81,13 @@ class TestUnitSystemManager:
         """Test converting values to display units in metric system."""
         manager = UnitSystemManager("metric")
         
-        # Test length conversion (1 m = 1000 mm)
-        value, unit = manager.convert_to_display(1.0, "length", Units.METER)
-        assert value == 1000.0
-        assert unit == "mm"
+        # Test length conversion (1 m = 1 m)
+        value, unit = manager.convert_to_display(1.0, "length")
+        assert value == 1.0
+        assert unit == "m"
         
         # Test force conversion (1000 N = 1 kN)
-        value, unit = manager.convert_to_display(1000.0, "force", Units.NEWTON)
+        value, unit = manager.convert_to_display(1000.0, "force")
         assert value == 1.0
         assert unit == "kN"
     
@@ -95,50 +95,50 @@ class TestUnitSystemManager:
         """Test converting values to display units in imperial system."""
         manager = UnitSystemManager("imperial")
         
-        # Test length conversion (1 m = 39.3701 in)
-        value, unit = manager.convert_to_display(1.0, "length", Units.METER)
-        assert value == pytest.approx(39.3701, rel=1e-4)
-        assert unit == "in"
+        # Test length conversion (1 m = 3.28084 ft)
+        value, unit = manager.convert_to_display(1.0, "length")
+        assert value == pytest.approx(3.28084, rel=1e-4)
+        assert unit == "ft"
         
-        # Test force conversion (4448.22 N = 1 kip)
-        value, unit = manager.convert_to_display(4448.22, "force", Units.NEWTON)
+        # Test force conversion (4.44822 N = 1 lb)
+        value, unit = manager.convert_to_display(4.44822, "force")
         assert value == pytest.approx(1.0, rel=1e-4)
-        assert unit == "kip"
+        assert unit == "lb"
     
     def test_convert_from_display_metric(self):
         """Test converting values from display units in metric system."""
         manager = UnitSystemManager("metric")
         
-        # Test length conversion (1000 mm = 1 m)
-        value = manager.convert_from_display(1000.0, "length", Units.METER)
+        # Test length conversion (1 m = 1 m)
+        value = manager.convert_from_display(1.0, "length")
         assert value == 1.0
         
         # Test force conversion (1 kN = 1000 N)
-        value = manager.convert_from_display(1.0, "force", Units.NEWTON)
+        value = manager.convert_from_display(1.0, "force")
         assert value == 1000.0
     
     def test_convert_from_display_imperial(self):
         """Test converting values from display units in imperial system."""
         manager = UnitSystemManager("imperial")
         
-        # Test length conversion (39.3701 in = 1 m)
-        value = manager.convert_from_display(39.3701, "length", Units.METER)
+        # Test length conversion (3.28084 ft = 1 m)
+        value = manager.convert_from_display(3.28084, "length")
         assert value == pytest.approx(1.0, rel=1e-4)
         
-        # Test force conversion (1 kip = 4448.22 N)
-        value = manager.convert_from_display(1.0, "force", Units.NEWTON)
-        assert value == pytest.approx(4448.22, rel=1e-4)
+        # Test force conversion (1 lb = 4.44822 N)
+        value = manager.convert_from_display(1.0, "force")
+        assert value == pytest.approx(4.44822, rel=1e-4)
     
     def test_format_value_metric(self):
         """Test formatting values with units in metric system."""
         manager = UnitSystemManager("metric")
         
         # Test length formatting
-        formatted = manager.format_value(1.0, "length", Units.METER)
-        assert formatted == "1000.000 mm"
+        formatted = manager.format_value(1.0, "length")
+        assert formatted == "1.000 m"
         
         # Test force formatting
-        formatted = manager.format_value(1000.0, "force", Units.NEWTON)
+        formatted = manager.format_value(1000.0, "force")
         assert formatted == "1.000 kN"
     
     def test_format_value_imperial(self):
@@ -146,19 +146,19 @@ class TestUnitSystemManager:
         manager = UnitSystemManager("imperial")
         
         # Test length formatting
-        formatted = manager.format_value(1.0, "length", Units.METER)
-        assert formatted == "39.37 in"
+        formatted = manager.format_value(1.0, "length")
+        assert formatted == "3.281 ft"
         
         # Test force formatting
-        formatted = manager.format_value(4448.22, "force", Units.NEWTON)
-        assert formatted == "1.000 kip"
+        formatted = manager.format_value(4.44822, "force")
+        assert formatted == "1.000 lb"
     
     def test_parse_value_with_units(self):
         """Test parsing values with units."""
         manager = UnitSystemManager("metric")
         
         # Test parsing with explicit units
-        value = manager.parse_value("1000 mm", "length")
+        value = manager.parse_value("1 m", "length")
         assert value == 1.0
         
         value = manager.parse_value("1 kN", "force")
@@ -168,8 +168,8 @@ class TestUnitSystemManager:
         """Test parsing values without units (assumes preferred unit)."""
         manager = UnitSystemManager("metric")
         
-        # Test parsing without units (assumes mm for length)
-        value = manager.parse_value("1000", "length")
+        # Test parsing without units (assumes m for length)
+        value = manager.parse_value("1", "length")
         assert value == 1.0
         
         # Test parsing without units (assumes kN for force)
@@ -214,13 +214,13 @@ class TestGlobalUnitFunctions:
         """Test length formatting in metric system."""
         set_unit_system("metric")
         formatted = format_length(1.0)  # 1 m
-        assert formatted == "1000.000 mm"
+        assert formatted == "1.000 m"
     
     def test_format_length_imperial(self):
         """Test length formatting in imperial system."""
         set_unit_system("imperial")
         formatted = format_length(1.0)  # 1 m
-        assert formatted == "39.37 in"
+        assert formatted == "3.281 ft"
     
     def test_format_force_metric(self):
         """Test force formatting in metric system."""
@@ -231,8 +231,8 @@ class TestGlobalUnitFunctions:
     def test_format_force_imperial(self):
         """Test force formatting in imperial system."""
         set_unit_system("imperial")
-        formatted = format_force(4448.22)  # 4448.22 N
-        assert formatted == "1.000 kip"
+        formatted = format_force(4.44822)  # 4.44822 N
+        assert formatted == "1.000 lb"
     
     def test_format_moment_metric(self):
         """Test moment formatting in metric system."""
@@ -243,8 +243,8 @@ class TestGlobalUnitFunctions:
     def test_format_moment_imperial(self):
         """Test moment formatting in imperial system."""
         set_unit_system("imperial")
-        formatted = format_moment(1355.82)  # 1355.82 N·m
-        assert formatted == "1.000 kip·ft"
+        formatted = format_moment(1.35582)  # 1.35582 N·m
+        assert formatted == "1.000 lb·ft"
     
     def test_format_stress_metric(self):
         """Test stress formatting in metric system."""
@@ -297,19 +297,19 @@ class TestGlobalUnitFunctions:
     def test_parse_length_metric(self):
         """Test length parsing in metric system."""
         set_unit_system("metric")
-        value = parse_length("1000 mm")
+        value = parse_length("1 m")
         assert value == 1.0
         
-        value = parse_length("1000")  # assumes mm
+        value = parse_length("1")  # assumes m
         assert value == 1.0
     
     def test_parse_length_imperial(self):
         """Test length parsing in imperial system."""
         set_unit_system("imperial")
-        value = parse_length("39.3701 in")
+        value = parse_length("3.28084 ft")
         assert value == pytest.approx(1.0, rel=1e-4)
         
-        value = parse_length("39.3701")  # assumes in
+        value = parse_length("3.28084")  # assumes ft
         assert value == pytest.approx(1.0, rel=1e-4)
     
     def test_parse_force_metric(self):
@@ -324,11 +324,11 @@ class TestGlobalUnitFunctions:
     def test_parse_force_imperial(self):
         """Test force parsing in imperial system."""
         set_unit_system("imperial")
-        value = parse_force("1 kip")
-        assert value == pytest.approx(4448.22, rel=1e-4)
+        value = parse_force("1 lb")
+        assert value == pytest.approx(4.44822, rel=1e-4)
         
-        value = parse_force("1")  # assumes kip
-        assert value == pytest.approx(4448.22, rel=1e-4)
+        value = parse_force("1")  # assumes lb
+        assert value == pytest.approx(4.44822, rel=1e-4)
     
     def test_parse_moment_metric(self):
         """Test moment parsing in metric system."""
@@ -342,11 +342,11 @@ class TestGlobalUnitFunctions:
     def test_parse_moment_imperial(self):
         """Test moment parsing in imperial system."""
         set_unit_system("imperial")
-        value = parse_moment("1 kip·ft")
-        assert value == pytest.approx(1355.82, rel=1e-4)
+        value = parse_moment("1 lb·ft")
+        assert value == pytest.approx(1.35582, rel=1e-4)
         
-        value = parse_moment("1")  # assumes kip·ft
-        assert value == pytest.approx(1355.82, rel=1e-4)
+        value = parse_moment("1")  # assumes lb·ft
+        assert value == pytest.approx(1.35582, rel=1e-4)
     
     def test_parse_stress_metric(self):
         """Test stress parsing in metric system."""

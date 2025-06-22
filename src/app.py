@@ -8,7 +8,7 @@ from flask_login import current_user
 
 from timber import Point, Load, Member, Model, Support, solve_with_diagnostics
 from timber.extensions import bcrypt, db, login_manager, migrate
-from timber.units import set_unit_system, get_unit_system, UnitSystem
+from timber.units import set_unit_system, get_unit_system, UnitSystem, get_unit_conversion_info, convert_to_display, convert_from_display, get_display_unit
 
 # -------------------------------------------------------------------
 # Module-level extensions are defined in timber.extensions
@@ -144,6 +144,60 @@ def create_app(config_object: object | str | None = None) -> Flask:
                 "unit_system": res.unit_system,
             }
         )
+
+    @app.get("/units/info")
+    def get_unit_info():
+        """Get unit conversion information for the current unit system."""
+        # Get unit system from query parameter, default to metric
+        unit_system = request.args.get("unit_system", "metric")
+        if unit_system not in ["metric", "imperial"]:
+            unit_system = "metric"
+        
+        set_unit_system(unit_system)  # type: ignore
+        
+        return jsonify({
+            "unit_system": get_unit_system(),
+            "conversions": get_unit_conversion_info()
+        })
+
+    @app.post("/units/convert")
+    def convert_units():
+        """Convert values between SI and display units."""
+        if not request.is_json:
+            return jsonify({"error": "JSON body required"}), 400
+        
+        data = request.get_json()
+        unit_system = data.get("unit_system", "metric")
+        set_unit_system(unit_system)
+        
+        conversions = []
+        for item in data.get("values", []):
+            unit_type = item.get("unit_type")
+            value = item.get("value")
+            direction = item.get("direction", "to_display")  # "to_display" or "from_display"
+            
+            if unit_type and value is not None:
+                if direction == "to_display":
+                    display_value, symbol = convert_to_display(value, unit_type)
+                    conversions.append({
+                        "unit_type": unit_type,
+                        "si_value": value,
+                        "display_value": display_value,
+                        "symbol": symbol
+                    })
+                else:  # from_display
+                    si_value = convert_from_display(value, unit_type)
+                    conversions.append({
+                        "unit_type": unit_type,
+                        "display_value": value,
+                        "si_value": si_value,
+                        "symbol": get_display_unit(unit_type)
+                    })
+        
+        return jsonify({
+            "unit_system": unit_system,
+            "conversions": conversions
+        })
 
     return app
 

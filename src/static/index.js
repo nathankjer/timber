@@ -26,14 +26,43 @@ function generateId() {
 // Use `var` so `currentView` becomes a property of the global object.
 // This allows tests (which run the file in a VM sandbox) to mutate
 // `currentView` by assigning to `global.currentView`.
-var currentView = "+Z";
+var currentView = "+Z"; // This is now just for display purposes
 
 function setCurrentView(view) {
   currentView = view;
-  // Reset rotation when switching to discrete views
-  rotationX = 0;
-  rotationY = 0;
-  rotationZ = 0;
+  // Convert discrete view to rotation angles
+  switch (view) {
+    case "+X":
+      rotationX = 0;
+      rotationY = -Math.PI / 2;
+      rotationZ = 0;
+      break;
+    case "-X":
+      rotationX = 0;
+      rotationY = Math.PI / 2;
+      rotationZ = 0;
+      break;
+    case "+Y":
+      rotationX = 0;
+      rotationY = 0;
+      rotationZ = Math.PI / 2;
+      break;
+    case "-Y":
+      rotationX = 0;
+      rotationY = Math.PI;
+      rotationZ = -Math.PI / 2;
+      break;
+    case "+Z":
+      rotationX = 0;
+      rotationY = 0;
+      rotationZ = 0;
+      break;
+    case "-Z":
+      rotationX = 0;
+      rotationY = Math.PI;
+      rotationZ = 0;
+      break;
+  }
 }
 
 // Rotation state for continuous rotation
@@ -45,6 +74,8 @@ let rotationStartX = 0;
 let rotationStartY = 0;
 let rotationOrigX = 0;
 let rotationOrigY = 0;
+let rotationOrigZ = 0;
+let rotationMode = "xy";
 
 // Convert rotation angles to a 3x3 rotation matrix
 function getRotationMatrix() {
@@ -81,11 +112,7 @@ function startRotation(ev) {
   rotationStartY = ev.clientY;
   rotationOrigX = rotationX;
   rotationOrigY = rotationY;
-  
-  // Switch to continuous rotation mode
-  if (["+X", "-X", "+Y", "-Y", "+Z", "-Z"].includes(currentView)) {
-    currentView = "continuous";
-  }
+  rotationOrigZ = rotationZ;
   
   document.addEventListener("mousemove", onRotation);
   document.addEventListener("mouseup", endRotation);
@@ -94,21 +121,22 @@ function startRotation(ev) {
 }
 
 // Handle rotation during mouse drag
-function onRotation(ev) {
+async function onRotation(ev) {
   if (!isRotating) return;
   
   const dx = ev.clientX - rotationStartX;
   const dy = ev.clientY - rotationStartY;
   
-  // Convert screen deltas to rotation angles
   // Scale factors for sensitivity
   const sensitivityX = 0.01; // Y rotation (horizontal mouse movement)
   const sensitivityY = 0.01; // X rotation (vertical mouse movement)
-  
+  const sensitivityZ = 0.005; // Z rotation (combined movement, lower sensitivity)
+
   rotationX = rotationOrigX + dy * sensitivityY;
   rotationY = rotationOrigY + dx * sensitivityX;
+  rotationZ = rotationOrigZ + (dx + dy) * sensitivityZ;
   
-  render();
+  await render(false);
 }
 
 // End rotation
@@ -125,33 +153,122 @@ let panStartX = 0;
 let panStartY = 0;
 let panOrigX = 0;
 let panOrigY = 0;
-
-function zoomIn() {
-  zoom *= 1.25;
-  render();
-}
-
-function zoomOut() {
-  zoom /= 1.25;
-  render();
-}
-
-function resetPanZoom() {
-  zoom = 1;
-  panX = 0;
-  panY = 0;
-  rotationX = 0;
-  rotationY = 0;
-  rotationZ = 0;
-  currentView = "+Z";
-  render();
-}
+let isPanning = false;
 const globalProps = { g: 9.81, units: "metric" };
-const PROP_LABELS = {
-  E: "Young's Modulus",
-  A: "Cross Sectional Area",
-  I: "Second Moment of Inertia",
-};
+let unitConversionInfo = null; // Cache for unit conversion info
+let isRenderingProperties = false; // Flag to prevent multiple simultaneous calls
+let propertyUpdateTimeout = null; // Timeout for debounced property updates
+
+// Unit conversion functions that use the backend API
+async function getUnitInfo() {
+  try {
+    const resp = await fetch("/units/info");
+    if (resp.ok) {
+      const data = await resp.json();
+      unitConversionInfo = data.conversions;
+      return data;
+    }
+  } catch (error) {
+    console.error("Failed to get unit info:", error);
+  }
+  return null;
+}
+
+async function convertValue(value, unitType, direction = "to_display") {
+  if (!unitConversionInfo) {
+    await getUnitInfo();
+  }
+  
+  try {
+    const resp = await fetch("/units/convert", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        unit_system: globalProps.units,
+        values: [{ unit_type: unitType, value: value, direction: direction }]
+      })
+    });
+    
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.conversions && data.conversions.length > 0) {
+        const conversion = data.conversions[0];
+        return direction === "to_display" 
+          ? { value: conversion.display_value, symbol: conversion.symbol }
+          : conversion.si_value;
+      }
+    }
+  } catch (error) {
+    console.error("Failed to convert value:", error);
+  }
+  
+  // Fallback to direct calculation if API fails
+  return fallbackConvert(value, unitType, direction);
+}
+
+function fallbackConvert(value, unitType, direction) {
+  const unitSystem = globalProps.units || "metric";
+  
+  if (unitType === "length") {
+    if (direction === "to_display") {
+      const displayValue = unitSystem === "metric" ? value * 1000 : value * 39.3701;
+      const symbol = unitSystem === "metric" ? "mm" : "in";
+      return { value: displayValue, symbol: symbol };
+    } else {
+      return unitSystem === "metric" ? value / 1000 : value / 39.3701;
+    }
+  } else if (unitType === "force") {
+    if (direction === "to_display") {
+      const displayValue = unitSystem === "metric" ? value / 1000 : value / 4.44822;
+      const symbol = unitSystem === "metric" ? "kN" : "lb";
+      return { value: displayValue, symbol: symbol };
+    } else {
+      return unitSystem === "metric" ? value * 1000 : value * 4.44822;
+    }
+  } else if (unitType === "stress") {
+    if (direction === "to_display") {
+      const displayValue = unitSystem === "metric" ? value / 1e9 : value / 6894760.0;
+      const symbol = unitSystem === "metric" ? "GPa" : "ksi";
+      return { value: displayValue, symbol: symbol };
+    } else {
+      return unitSystem === "metric" ? value * 1e9 : value * 6894760.0;
+    }
+  } else if (unitType === "area") {
+    if (direction === "to_display") {
+      const displayValue = unitSystem === "metric" ? value * 1e6 : value * 1550.0031;
+      const symbol = unitSystem === "metric" ? "mm²" : "in²";
+      return { value: displayValue, symbol: symbol };
+    } else {
+      return unitSystem === "metric" ? value / 1e6 : value / 1550.0031;
+    }
+  } else if (unitType === "moment_of_inertia") {
+    if (direction === "to_display") {
+      const displayValue = unitSystem === "metric" ? value * 1e12 : value * 2.4025e9;
+      const symbol = unitSystem === "metric" ? "mm⁴" : "in⁴";
+      return { value: displayValue, symbol: symbol };
+    } else {
+      return unitSystem === "metric" ? value / 1e12 : value / 2.4025e9;
+    }
+  } else if (unitType === "acceleration") {
+    if (direction === "to_display") {
+      const displayValue = unitSystem === "metric" ? value : value / 0.3048;
+      const symbol = unitSystem === "metric" ? "m/s²" : "ft/s²";
+      return { value: displayValue, symbol: symbol };
+    } else {
+      return unitSystem === "metric" ? value : value * 0.3048;
+    }
+  } else if (unitType === "moment") {
+    if (direction === "to_display") {
+      const displayValue = unitSystem === "metric" ? value / 1000 : value / 1.35582;
+      const symbol = unitSystem === "metric" ? "kN·m" : "lb·ft";
+      return { value: displayValue, symbol: symbol };
+    } else {
+      return unitSystem === "metric" ? value * 1000 : value * 1.35582;
+    }
+  }
+  
+  return direction === "to_display" ? { value: value, symbol: "" } : value;
+}
 
 function renderSheetList() {
   const list = document.getElementById("sheet-list");
@@ -230,62 +347,20 @@ document.getElementById("sheet-list").addEventListener("click", (ev) => {
 renderSheetList();
 
 function projectPoint(p) {
-  // Check if we're in a discrete view or using continuous rotation
-  const discreteViews = ["+X", "-X", "+Y", "-Y", "+Z", "-Z"];
-  
-  if (discreteViews.includes(currentView)) {
-    // Use discrete orthographic projection
-  switch (currentView) {
-    case "+X":
-      return { x: p.y, y: -p.z };
-    case "-X":
-      return { x: -p.y, y: -p.z };
-    case "+Y":
-      return { x: p.x, y: -p.z };
-    case "-Y":
-      return { x: -p.x, y: -p.z };
-    case "+Z":
-      return { x: p.x, y: -p.y };
-    case "-Z":
-      return { x: -p.x, y: -p.y };
-    }
-  } else {
-    // Use continuous rotation
-    const matrix = getRotationMatrix();
-    const rotated = rotatePoint(p, matrix);
-    // Project onto XY plane (looking down Z axis)
-    return { x: rotated.x, y: -rotated.y };
-  }
+  // Always use continuous rotation - no discrete view mode
+  const matrix = getRotationMatrix();
+  const rotated = rotatePoint(p, matrix);
+  // Project onto XY plane (looking down Z axis)
+  return { x: rotated.x, y: -rotated.y };
 }
 
 function unprojectDelta(dx, dy) {
-  // Check if we're in a discrete view or using continuous rotation
-  const discreteViews = ["+X", "-X", "+Y", "-Y", "+Z", "-Z"];
-  
-  if (discreteViews.includes(currentView)) {
-    // Use discrete orthographic projection
-  switch (currentView) {
-    case "+X":
-      return { y: dx, z: -dy };
-    case "-X":
-      return { y: -dx, z: -dy };
-    case "+Y":
-      return { x: dx, z: -dy };
-    case "-Y":
-      return { x: -dx, z: -dy };
-    case "+Z":
-      return { x: dx, y: -dy };
-    case "-Z":
-      return { x: -dx, y: -dy };
-    }
-  } else {
-    // Use continuous rotation - approximate for small deltas
-    const matrix = getRotationMatrix();
-    // For small deltas, we can approximate by applying inverse rotation
-    // This is a simplified approach - for more accuracy we'd need full matrix inverse
-    const scale = 1 / zoom;
-    return { x: dx * scale, y: -dy * scale, z: 0 };
-  }
+  // Always use continuous rotation - approximate for small deltas
+  const matrix = getRotationMatrix();
+  // For small deltas, we can approximate by applying inverse rotation
+  // This is a simplified approach - for more accuracy we'd need full matrix inverse
+  const scale = 1 / zoom;
+  return { x: dx * scale, y: -dy * scale, z: 0 };
 }
 const SNAP_PIXELS = 10;
 
@@ -326,25 +401,8 @@ function isPointInPolygon(point, polygon) {
 }
 
 function axisInfo(view) {
-  if (view === "continuous") {
-    // For continuous rotation, use a default that works with the rotation matrix
-    return { h: { axis: "x", sign: 1 }, v: { axis: "y", sign: -1 } };
-  }
-  
-  switch (view) {
-    case "+X":
-      return { h: { axis: "y", sign: 1 }, v: { axis: "z", sign: -1 } };
-    case "-X":
-      return { h: { axis: "y", sign: -1 }, v: { axis: "z", sign: -1 } };
-    case "+Y":
-      return { h: { axis: "x", sign: 1 }, v: { axis: "z", sign: -1 } };
-    case "-Y":
-      return { h: { axis: "x", sign: -1 }, v: { axis: "z", sign: -1 } };
-    case "+Z":
-      return { h: { axis: "x", sign: 1 }, v: { axis: "y", sign: -1 } };
-    case "-Z":
-      return { h: { axis: "x", sign: -1 }, v: { axis: "y", sign: -1 } };
-  }
+  // Always return continuous rotation info - no discrete view mode
+  return { h: { axis: "x", sign: 1 }, v: { axis: "y", sign: -1 } };
 }
 
 const axisDims = { x: "width", y: "height", z: "depth" };
@@ -701,36 +759,20 @@ function applySnapping(el) {
   }
 }
 
-function addNumberInput(container, label, prop, el, unitType = null, pointIndex = -1) {
+async function addNumberInput(container, label, prop, el, unitType = null, pointIndex = -1) {
   const div = document.createElement("div");
   div.className = "mb-2";
   
-  // Get current value and format with units if applicable
+  // Get current value (always in SI units)
   let currentValue = pointIndex > -1 ? el.points[pointIndex][prop] : (el[prop] ?? 0);
   let displayValue = currentValue;
   let unitSymbol = "";
   
   if (unitType) {
-    const unitSystem = globalProps.units || "metric";
-    if (unitType === "length") {
-      unitSymbol = unitSystem === "metric" ? "mm" : "in";
-      displayValue = unitSystem === "metric" ? (currentValue * 1000).toFixed(3) : (currentValue * 39.3701).toFixed(3);
-    } else if (unitType === "force") {
-      unitSymbol = unitSystem === "metric" ? "kN" : "kip";
-      displayValue = unitSystem === "metric" ? (currentValue / 1000).toFixed(3) : (currentValue / 4448.22).toFixed(3);
-    } else if (unitType === "stress") {
-      unitSymbol = unitSystem === "metric" ? "GPa" : "ksi";
-      displayValue = unitSystem === "metric" ? (currentValue / 1e9).toFixed(3) : (currentValue / 6894760.0).toFixed(3);
-    } else if (unitType === "area") {
-      unitSymbol = unitSystem === "metric" ? "mm²" : "in²";
-      displayValue = unitSystem === "metric" ? (currentValue * 1e6).toFixed(3) : (currentValue * 1550.0031).toFixed(3);
-    } else if (unitType === "moment_of_inertia") {
-      unitSymbol = unitSystem === "metric" ? "mm⁴" : "in⁴";
-      displayValue = unitSystem === "metric" ? (currentValue * 1e12).toFixed(3) : (currentValue * 2.4025e9).toFixed(3);
-    } else if (unitType === "acceleration") {
-      unitSymbol = unitSystem === "metric" ? "m/s²" : "ft/s²";
-      displayValue = unitSystem === "metric" ? currentValue.toFixed(3) : (currentValue * 3.28084).toFixed(3);
-    }
+    // Use backend unit conversion API
+    const conversion = await convertValue(currentValue, unitType, "to_display");
+    displayValue = conversion.value.toFixed(3);
+    unitSymbol = conversion.symbol;
   }
   
   // Create input with unit label
@@ -747,56 +789,18 @@ function addNumberInput(container, label, prop, el, unitType = null, pointIndex 
   }
   
   const input = div.querySelector("input");
-  input.addEventListener("input", (ev) => {
+  input.addEventListener("input", async (ev) => {
     const text = ev.target.value;
     let v;
     
     if (unitType) {
       try {
-        // Parse value without units (units are now in static label)
-        const unitSystem = globalProps.units || "metric";
-        if (unitType === "length") {
-          v = parseFloat(text);
-          if (unitSystem === "metric") {
-            v = v / 1000; // Convert mm to m
-          } else {
-            v = v / 39.3701; // Convert in to m
-          }
-        } else if (unitType === "force") {
-          v = parseFloat(text);
-          if (unitSystem === "metric") {
-            v = v * 1000; // Convert kN to N
-          } else {
-            v = v * 4448.22; // Convert kip to N
-          }
-        } else if (unitType === "stress") {
-          v = parseFloat(text);
-          if (unitSystem === "metric") {
-            v = v * 1e9; // Convert GPa to Pa
-          } else {
-            v = v * 6894760.0; // Convert ksi to Pa
-          }
-        } else if (unitType === "area") {
-          v = parseFloat(text);
-          if (unitSystem === "metric") {
-            v = v / 1e6; // Convert mm² to m²
-          } else {
-            v = v / 1550.0031; // Convert in² to m²
-          }
-        } else if (unitType === "moment_of_inertia") {
-          v = parseFloat(text);
-          if (unitSystem === "metric") {
-            v = v / 1e12; // Convert mm⁴ to m⁴
-          } else {
-            v = v / 2.4025e9; // Convert in⁴ to m⁴
-          }
-        } else if (unitType === "acceleration") {
-          v = parseFloat(text);
-          if (unitSystem === "metric") {
-            v = v; // Already in m/s²
-          } else {
-            v = v / 3.28084; // Convert ft/s² to m/s²
-          }
+        // Parse value and convert from display units to SI
+        const displayValue = parseFloat(text);
+        if (Number.isFinite(displayValue)) {
+          v = await convertValue(displayValue, unitType, "from_display");
+        } else {
+          v = 0;
         }
       } catch (e) {
         v = 0;
@@ -818,118 +822,157 @@ function addNumberInput(container, label, prop, el, unitType = null, pointIndex 
   container.appendChild(div);
 }
 
-function renderProperties() {
-  const pane = document.getElementById("props-content");
-  pane.innerHTML = "";
-  if (selectedId !== null) {
-    const el = elements.find((e) => e.id === selectedId);
-    if (el) {
-      const form = document.createElement("div");
-      form.innerHTML = `<div class="mb-2">Type: <strong>${el.type}</strong></div>`;
-      
-      // Show points for all element types
-      if (el.points) {
-        el.points.forEach((p, i) => {
-          form.innerHTML += `<div class="mb-2 fw-bold">Point ${i+1}</div>`;
-          ["x", "y", "z"].forEach(coord => addNumberInput(form, coord, coord, el, "length", i));
-        });
-      }
-      
-      if (el.type === "Member" || el.type === "Cable") {
-        addNumberInput(form, "Young's Modulus (E)", "E", el, "stress");
-        addNumberInput(form, "Cross Sectional Area (A)", "A", el, "area");
-        addNumberInput(form, "Second Moment of Inertia (I)", "I", el, "moment_of_inertia");
-      } else if (el.type === "Support") {
-        ["ux", "uy", "rz"].forEach((p) => {
-          const div = document.createElement("div");
-          div.className = "form-check form-check-inline me-2";
-          div.innerHTML = `<input class='form-check-input' type='checkbox' id='prop-${p}'> <label class='form-check-label' for='prop-${p}'>${p}</label>`;
-          const input = div.querySelector("input");
-          input.checked = el[p] !== false;
-          input.addEventListener("change", () => {
-            el[p] = input.checked;
-            saveState();
-          });
-          form.appendChild(div);
-        });
-      } else if (el.type === "Load") {
-        addNumberInput(form, "amount", "amount", el, "force");
-      }
-      pane.appendChild(form);
-      document.getElementById("delete-btn").disabled = false;
-    }
-  } else {
-    document.getElementById("delete-btn").disabled = true;
+// Debounced property update function
+function schedulePropertyUpdate() {
+  // Clear any existing timeout
+  if (propertyUpdateTimeout) {
+    clearTimeout(propertyUpdateTimeout);
   }
-
-  const globalDiv = document.createElement("div");
-  globalDiv.innerHTML = `<hr><h6>Global</h6>
-    <div class='mb-2'><label class='form-label'>Units</label><select id='global-units' class='form-select form-select-sm'>
-      <option value='metric'>Metric</option><option value='imperial'>Imperial</option></select></div>`;
-  pane.appendChild(globalDiv);
   
-  // Add gravity input with units
-  const gravityDiv = document.createElement("div");
-  gravityDiv.className = "mb-2";
-  const unitSystem = globalProps.units || "metric";
-  const gravityUnit = unitSystem === "metric" ? "m/s²" : "ft/s²";
-  const gravityValue = unitSystem === "metric" ? globalProps.g.toFixed(3) : (globalProps.g * 3.28084).toFixed(3);
-  
-  gravityDiv.innerHTML = `
-    <label class='form-label'>Gravity (g)</label>
-    <div class='input-group input-group-sm'>
-      <input id='global-g' class='form-control' type='text' value='${gravityValue}'>
-      <span class='input-group-text'>${gravityUnit}</span>
-    </div>
-  `;
-  pane.appendChild(gravityDiv);
-  
-  const gInput = gravityDiv.querySelector("#global-g");
-  gInput.addEventListener("input", (ev) => {
-    const text = ev.target.value;
-    let v = parseFloat(text);
-    
-    if (Number.isFinite(v)) {
-      const unitSystem = globalProps.units || "metric";
-      if (unitSystem === "metric") {
-        globalProps.g = v; // Already in m/s²
-      } else {
-        globalProps.g = v / 3.28084; // Convert ft/s² to m/s²
-      }
+  // Schedule a new property update after 100ms
+  propertyUpdateTimeout = setTimeout(async () => {
+    if (!isRenderingProperties) {
+      await renderProperties();
     }
-  });
+    propertyUpdateTimeout = null;
+  }, 100);
+}
+
+async function renderProperties() {
+  // Prevent multiple simultaneous calls
+  if (isRenderingProperties) {
+    return;
+  }
+  isRenderingProperties = true;
   
-  const sel = globalDiv.querySelector("#global-units");
-  sel.value = globalProps.units;
-  sel.addEventListener("change", (ev) => {
+  try {
+    const pane = document.getElementById("props-content");
+    pane.innerHTML = "";
+    if (selectedId !== null) {
+      const el = elements.find((e) => e.id === selectedId);
+      if (el) {
+        const form = document.createElement("div");
+        form.innerHTML = `<div class="mb-2">Type: <strong>${el.type}</strong></div>`;
+        
+        // Show points for all element types
+        if (el.points) {
+          for (let i = 0; i < el.points.length; i++) {
+            form.innerHTML += `<div class="mb-2 fw-bold">Point ${i+1}</div>`;
+            await addNumberInput(form, "x", "x", el, "length", i);
+            await addNumberInput(form, "y", "y", el, "length", i);
+            await addNumberInput(form, "z", "z", el, "length", i);
+          }
+        }
+        
+        if (el.type === "Member" || el.type === "Cable") {
+          await addNumberInput(form, "Young's Modulus (E)", "E", el, "stress");
+          await addNumberInput(form, "Cross Sectional Area (A)", "A", el, "area");
+          await addNumberInput(form, "Second Moment of Inertia (I)", "I", el, "moment_of_inertia");
+        } else if (el.type === "Support") {
+          ["ux", "uy", "rz"].forEach((p) => {
+            const div = document.createElement("div");
+            div.className = "form-check form-check-inline me-2";
+            div.innerHTML = `<input class='form-check-input' type='checkbox' id='prop-${p}'> <label class='form-check-label' for='prop-${p}'>${p}</label>`;
+            const input = div.querySelector("input");
+            input.checked = el[p] !== false;
+            input.addEventListener("change", () => {
+              el[p] = input.checked;
+              saveState();
+            });
+            form.appendChild(div);
+          });
+        } else if (el.type === "Load") {
+          await addNumberInput(form, "amount", "amount", el, "force");
+        }
+        pane.appendChild(form);
+        document.getElementById("delete-btn").disabled = false;
+      }
+    } else {
+      document.getElementById("delete-btn").disabled = true;
+    }
+
+    const globalDiv = document.createElement("div");
+    globalDiv.innerHTML = `<hr><h6>Global</h6>
+      <div class='mb-2'><label class='form-label'>Units</label><select id='global-units' class='form-select form-select-sm'>
+        <option value='metric'>Metric</option><option value='imperial'>Imperial</option></select></div>`;
+    pane.appendChild(globalDiv);
+    
+    // Add gravity input with units using backend API
+    const gravityDiv = document.createElement("div");
+    gravityDiv.className = "mb-2";
+    
+    // Get gravity display value and unit from backend
+    const gravityConversion = await convertValue(globalProps.g, "acceleration", "to_display");
+    const gravityValue = gravityConversion.value.toFixed(3);
+    const gravityUnit = gravityConversion.symbol;
+    
+    gravityDiv.innerHTML = `
+      <label class='form-label'>Gravity (g)</label>
+      <div class='input-group input-group-sm'>
+        <input id='global-g' class='form-control' type='text' value='${gravityValue}'>
+        <span class='input-group-text'>${gravityUnit}</span>
+      </div>
+    `;
+    pane.appendChild(gravityDiv);
+    
+    const gInput = gravityDiv.querySelector("#global-g");
+    gInput.addEventListener("input", async (ev) => {
+      const text = ev.target.value;
+      let v = parseFloat(text);
+      
+      if (Number.isFinite(v)) {
+        // Convert from display units to SI using backend API
+        globalProps.g = await convertValue(v, "acceleration", "from_display");
+      }
+    });
+    
+    const sel = globalDiv.querySelector("#global-units");
+    sel.value = globalProps.units;
+    sel.addEventListener("change", async (ev) => {
     const old = globalProps.units;
     globalProps.units = ev.target.value;
     if (old !== globalProps.units) {
-      // Convert gravity value
+        // Convert gravity value
       if (globalProps.units === "metric") {
-        globalProps.g = 9.81; // m/s²
+          globalProps.g = 9.81; // m/s²
       } else {
-        globalProps.g = 32.174; // ft/s²
+          globalProps.g = 32.174 * 0.3048; // ft/s² converted to m/s²
+        }
+        // Re-render properties to update unit displays
+        await renderProperties();
       }
-      // Re-render properties to update unit displays
-    renderProperties();
-    }
-  });
+    });
+  } finally {
+    isRenderingProperties = false;
+  }
 }
 
-// Update view button states based on current view
+// Update view button states based on current rotation angles
 function updateViewButtonStates() {
-  const discreteViews = ["+X", "-X", "+Y", "-Y", "+Z", "-Z"];
+  // Determine which discrete view is closest to current rotation
+  const tolerance = Math.PI / 4; // 45 degrees tolerance
+  
+  let closestView = null;
+  if (Math.abs(rotationX) < tolerance && Math.abs(rotationY) < tolerance && Math.abs(rotationZ) < tolerance) {
+    closestView = "+Z";
+  } else if (Math.abs(rotationX) < tolerance && Math.abs(rotationY - Math.PI) < tolerance && Math.abs(rotationZ) < tolerance) {
+    closestView = "-Z";
+  } else if (Math.abs(rotationX) < tolerance && Math.abs(rotationY - Math.PI/2) < tolerance && Math.abs(rotationZ) < tolerance) {
+    closestView = "-X";
+  } else if (Math.abs(rotationX) < tolerance && Math.abs(rotationY + Math.PI/2) < tolerance && Math.abs(rotationZ) < tolerance) {
+    closestView = "+X";
+  } else if (Math.abs(rotationX) < tolerance && Math.abs(rotationY) < tolerance && Math.abs(rotationZ - Math.PI/2) < tolerance) {
+    closestView = "+Y";
+  } else if (Math.abs(rotationX) < tolerance && Math.abs(rotationY - Math.PI) < tolerance && Math.abs(rotationZ + Math.PI/2) < tolerance) {
+    closestView = "-Y";
+  }
+  
   document.querySelectorAll(".view-btn").forEach((btn) => {
-    if (discreteViews.includes(currentView)) {
-      btn.classList.toggle("active", btn.dataset.view === currentView);
-    } else {
-      btn.classList.remove("active");
-    }
+    btn.classList.toggle("active", btn.dataset.view === closestView);
   });
 }
 
-function render(updateProps = true) {
+async function render(updateProps = true) {
   const svg = document.getElementById("canvas");
   svg.innerHTML = "";
   const rect = svg.getBoundingClientRect();
@@ -937,13 +980,10 @@ function render(updateProps = true) {
   const cy = rect.height / 2 + panY;
   
   // Update current view display
-  if (currentView === "continuous") {
-    const rx = (rotationX * 180 / Math.PI).toFixed(1);
-    const ry = (rotationY * 180 / Math.PI).toFixed(1);
-    document.getElementById("current-view").textContent = `Rotated (X:${rx}°, Y:${ry}°)`;
-  } else {
-  document.getElementById("current-view").textContent = currentView;
-  }
+  const rx = (rotationX * 180 / Math.PI).toFixed(1);
+  const ry = (rotationY * 180 / Math.PI).toFixed(1);
+  const rz = (rotationZ * 180 / Math.PI).toFixed(1);
+  document.getElementById("current-view").textContent = `Rotated (X:${rx}°, Y:${ry}°, Z:${rz}°)`;
 
   // First, render all points as dots
   const pointMap = new Map();
@@ -1135,14 +1175,16 @@ function render(updateProps = true) {
   // Render calculation results on top
   renderCalculationResults();
 
-  if (updateProps) {
-    renderProperties();
+  // Only update properties if explicitly requested and not during continuous operations
+  if (updateProps && !isRotating && !isPanning) {
+    // Use debounced property update for operations that might have micro-stops
+    schedulePropertyUpdate();
   }
 
   updateViewButtonStates();
 }
 
-function addElement(type) {
+async function addElement(type) {
   const id = generateId();
   const center = unprojectDelta(-panX / zoom, -panY / zoom);
   const base = {
@@ -1169,7 +1211,23 @@ function addElement(type) {
     // Create plane with 4 corner points
     const l = 40 / 2; // half length
     const w = 40 / 2; // half width
-    const normal = currentView === "continuous" ? "Z" : currentView[1];
+    
+    // Determine normal direction based on current rotation
+    // Find the axis that's most aligned with the view direction
+    const matrix = getRotationMatrix();
+    const viewDir = [matrix[2][0], matrix[2][1], matrix[2][2]]; // Z axis of rotation matrix
+    const absX = Math.abs(viewDir[0]);
+    const absY = Math.abs(viewDir[1]);
+    const absZ = Math.abs(viewDir[2]);
+    
+    let normal;
+    if (absX >= absY && absX >= absZ) {
+      normal = "X";
+    } else if (absY >= absZ) {
+      normal = "Y";
+    } else {
+      normal = "Z";
+    }
     
     // Generate corner points based on normal direction
     let points;
@@ -1236,7 +1294,12 @@ function addElement(type) {
   elements.push(base);
   applySnapping(base);
   saveState();
-  render();
+  // Clear any pending debounced updates and render immediately
+  if (propertyUpdateTimeout) {
+    clearTimeout(propertyUpdateTimeout);
+    propertyUpdateTimeout = null;
+  }
+  render(true);
 }
 
 function deleteElement() {
@@ -1244,7 +1307,12 @@ function deleteElement() {
   elements = elements.filter((e) => e.id !== selectedId);
   selectedId = null;
   saveState();
-  render();
+  // Clear any pending debounced updates and render immediately
+  if (propertyUpdateTimeout) {
+    clearTimeout(propertyUpdateTimeout);
+    propertyUpdateTimeout = null;
+  }
+  render(true);
 }
 
 function startDrag(ev) {
@@ -1348,7 +1416,7 @@ function startDrag(ev) {
   ev.stopPropagation();
 }
 
-function onDrag(ev) {
+async function onDrag(ev) {
   if (dragId === null) return;
   const el = elements.find((e) => e.id === dragId);
   if (!el) return;
@@ -1540,10 +1608,10 @@ function onDrag(ev) {
       p.z = orig_p.z + (delta.z || 0);
     });
   }
-  render();
+  await render(false);
 }
 
-function endDrag() {
+async function endDrag() {
   if (dragId === null) return;
   document.removeEventListener("mousemove", onDrag);
   document.removeEventListener("mouseup", endDrag);
@@ -1552,7 +1620,30 @@ function endDrag() {
   dragId = null;
   dragMode = "body";
   saveState();
-  render();
+  // Clear any pending debounced updates and render immediately
+  if (propertyUpdateTimeout) {
+    clearTimeout(propertyUpdateTimeout);
+    propertyUpdateTimeout = null;
+  }
+  await render(true); // Update properties when dragging ends
+}
+
+async function zoomIn() {
+  zoom *= 1.25;
+  await render(true); // Use debounced property update
+}
+
+async function zoomOut() {
+  zoom /= 1.25;
+  await render(true); // Use debounced property update
+}
+
+async function resetPanZoom() {
+  zoom = 1;
+  panX = 0;
+  panY = 0;
+  setCurrentView("+Z"); // This will set rotationX = 0, rotationY = 0, rotationZ = 0
+  await render(true); // Immediate property update for discrete reset operation
 }
 
 function startPan(ev) {
@@ -1562,6 +1653,7 @@ function startPan(ev) {
     return;
   }
   
+  isPanning = true;
   panStartX = ev.clientX;
   panStartY = ev.clientY;
   panOrigX = panX;
@@ -1570,23 +1662,24 @@ function startPan(ev) {
   document.addEventListener("mouseup", endPan);
 }
 
-function onPan(ev) {
+async function onPan(ev) {
   panX = panOrigX + (ev.clientX - panStartX);
   panY = panOrigY + (ev.clientY - panStartY);
-  render();
+  await render(false);
 }
 
 function endPan() {
+  isPanning = false;
   document.removeEventListener("mousemove", onPan);
   document.removeEventListener("mouseup", endPan);
 }
 
-function onCanvasWheel(ev) {
+async function onCanvasWheel(ev) {
   if (!ev.shiftKey) return;
   ev.preventDefault();
   const factor = Math.exp(-ev.deltaY / 200);
   zoom *= factor;
-  render();
+  await render(true); // Use debounced property update
 }
 
 async function saveState() {
@@ -1689,26 +1782,37 @@ async function loadState() {
     // Clear calculation results when loading a new sheet
     lastCalculationResults = null;
     
+    // Clear any pending debounced updates and render immediately
+    if (propertyUpdateTimeout) {
+      clearTimeout(propertyUpdateTimeout);
+      propertyUpdateTimeout = null;
+    }
+    
     updateSheetHeader();
-    render();
+    await render(true);
   }
 }
 
-document.getElementById("add-btn").addEventListener("click", () => {
+document.getElementById("add-btn").addEventListener("click", async () => {
   const type = document.getElementById("element-type").value;
-  addElement(type);
+  await addElement(type);
 });
-document.getElementById("delete-btn").addEventListener("click", deleteElement);
-document.getElementById("canvas").addEventListener("click", () => {
+document.getElementById("delete-btn").addEventListener("click", async () => { await deleteElement(); });
+document.getElementById("canvas").addEventListener("click", async () => {
   selectedId = null;
-  render();
+  // Clear any pending debounced updates and render immediately
+  if (propertyUpdateTimeout) {
+    clearTimeout(propertyUpdateTimeout);
+    propertyUpdateTimeout = null;
+  }
+  await render(true);
 });
 document.getElementById("canvas").addEventListener("mousedown", startPan);
 document.getElementById("canvas").addEventListener("wheel", onCanvasWheel);
 document.getElementById("zoom-in").addEventListener("click", zoomIn);
 document.getElementById("zoom-out").addEventListener("click", zoomOut);
 document.getElementById("home-btn").addEventListener("click", resetPanZoom);
-document.addEventListener("keydown", (ev) => {
+document.addEventListener("keydown", async (ev) => {
   if (ev.key === "Delete" || ev.key === "Backspace" || ev.key === "Del") {
     const active = document.activeElement;
     if (
@@ -1719,36 +1823,18 @@ document.addEventListener("keydown", (ev) => {
     ) {
       return;
     }
-    deleteElement();
-  }
-});
-
-document.getElementById("edit-title").addEventListener("click", async () => {
-  const sheet = getCurrentSheet();
-  if (!sheet) return;
-  const name = prompt("Sheet name", sheet.name);
-  if (name && name.trim() && name !== sheet.name) {
-    const resp = await fetch(`/sheet/${sheet.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    if (resp.ok) {
-      const data = await resp.json();
-      sheet.name = data.name;
-      renderSheetList();
-    }
+    await deleteElement();
   }
 });
 
 document.querySelectorAll(".view-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
+  btn.addEventListener("click", async () => {
     setCurrentView(btn.dataset.view);
     document
       .querySelectorAll(".view-btn")
       .forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
-    render();
+    await render(true); // Immediate property update for discrete view changes
   });
 });
 
@@ -2230,4 +2316,14 @@ function constrainToOrthogonal(delta, faceIndex, elementType) {
   }
   
   return constrained;
+}
+
+function selectElement(id) {
+  selectedId = id;
+  // Clear any pending debounced updates and render immediately
+  if (propertyUpdateTimeout) {
+    clearTimeout(propertyUpdateTimeout);
+    propertyUpdateTimeout = null;
+  }
+  render(true); // Always update properties when selecting an element
 }
