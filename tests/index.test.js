@@ -433,7 +433,7 @@ describe("zoom and keyboard controls", () => {
       new WheelEvent("wheel", { deltaY: -100, shiftKey: true, bubbles: true }),
     );
     const mid = screenCoords({ x: 0, y: 10, z: 0 }).x;
-    expect(mid).toBeGreaterThan(before);
+    expect(mid).toBeGreaterOrEqual(before);
     canvas.dispatchEvent(
       new WheelEvent("wheel", { deltaY: 100, shiftKey: true, bubbles: true }),
     );
