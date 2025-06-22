@@ -251,6 +251,10 @@ def solve_with_diagnostics(model: Model) -> tuple[Results, List[str]]:
     """Solve the model and return potential issues found."""
     K_full, F_ext, K, F = _assemble_matrices(model)
     
+    # Handle empty model case
+    if K.size == 0:
+        return Results(displacements={}, reactions={}, unit_system=get_unit_manager().system), ["No elements defined."]
+    
     try:
         d = np.linalg.solve(K, F)
         singular = False

@@ -15,7 +15,7 @@ from timber.units import set_unit_system, get_unit_system, UnitSystem
 # -------------------------------------------------------------------
 
 
-def create_app(config_object: str | None = None) -> Flask:
+def create_app(config_object: object | str | None = None) -> Flask:
     """Application factory with optional config object."""
     template_root = os.path.join(os.path.dirname(__file__), "timber", "templates")
     app = Flask(__name__, template_folder=template_root)
@@ -38,7 +38,7 @@ def create_app(config_object: str | None = None) -> Flask:
     migrate.init_app(app, db)
     login_manager.init_app(app)
     bcrypt.init_app(app)
-    login_manager.login_view = "auth.login"
+    login_manager.login_view = "auth.login"  # type: ignore
 
     from timber.auth import auth_bp
     from timber.sheet import sheet_bp
@@ -59,7 +59,7 @@ def create_app(config_object: str | None = None) -> Flask:
         if current_user.is_authenticated:
             sheets = Sheet.query.filter_by(user_id=current_user.id).all()
             if not sheets:
-                sheet = Sheet(name="Untitled", user_id=current_user.id)
+                sheet = Sheet(name="Untitled", user_id=current_user.id)  # type: ignore
                 db.session.add(sheet)
                 db.session.commit()
                 sheets = [sheet]

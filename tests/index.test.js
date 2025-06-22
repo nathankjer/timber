@@ -320,7 +320,7 @@ describe("server round‑trips", () => {
 
     // Stub out the DELETE and subsequent loadState()
     fetch.mockResponses(
-      ["", { status: 200 }], // deleteSheet
+      [JSON.stringify({ status: "deleted" }), { status: 200 }], // deleteSheet
       [
         JSON.stringify({ id: 1, name: "Sheet 1", elements: [] }),
         { status: 200 },

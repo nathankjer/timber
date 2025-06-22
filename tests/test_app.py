@@ -47,7 +47,7 @@ def test_solve_endpoint_returns_results():
         )
         assert resp.status_code == 200
         data = resp.get_json()
-        dy = float(data["displacements"]["2"][1])
+        dy = float(data["displacements"]["2"]["raw"][1])
         assert math.isclose(dy, expected.displacements[2][1], rel_tol=1e-9)
 
 
@@ -89,8 +89,13 @@ def test_solve_endpoint_requires_json():
 def test_solve_endpoint_empty_payload_raises_error():
     app = create_test_app()
     with app.test_client() as client:
-        with pytest.raises(ValueError):
-            client.post("/solve", json={})
+        resp = client.post("/solve", json={})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "displacements" in data
+        assert "reactions" in data
+        assert "issues" in data
+        assert "No elements defined." in data["issues"]
 
 
 def test_solve_endpoint_invalid_nested_payload():
@@ -145,6 +150,7 @@ def test_index_route_authenticated_creates_default_sheet(monkeypatch):
         client.get("/")
         assert Sheet.query.count() == initial_count + 1
         new_sheet = Sheet.query.order_by(Sheet.id.desc()).first()
+        assert new_sheet is not None
         assert captured["ctx"]["sheet_id"] == new_sheet.id
         assert captured["ctx"]["sheets"] == [
             {"id": new_sheet.id, "name": new_sheet.name}
@@ -157,8 +163,9 @@ def test_index_route_authenticated_with_existing_sheets(monkeypatch):
     with app.test_client() as client, app.app_context():
         _register_and_login(client, email="second@example.com")
         user = User.query.filter_by(email="second@example.com").first()
-        s1 = Sheet(name="First", user_id=user.id)
-        s2 = Sheet(name="Second", user_id=user.id)
+        assert user is not None
+        s1 = Sheet(name="First", user_id=user.id)  # type: ignore
+        s2 = Sheet(name="Second", user_id=user.id)  # type: ignore
         db.session.add_all([s1, s2])
         db.session.commit()
         initial_count = Sheet.query.count()

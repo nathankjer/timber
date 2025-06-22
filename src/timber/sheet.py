@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import Blueprint, abort, jsonify, request
 from flask_login import current_user, login_required
@@ -23,8 +23,9 @@ def list_sheets():
 @sheet_bp.post("")
 @login_required
 def create_sheet():
-    name = request.json.get("name", "Untitled")
-    sheet = Sheet(name=name, user_id=current_user.id)
+    json_data = request.json or {}
+    name = json_data.get("name", "New Sheet")
+    sheet = Sheet(name=name, user_id=current_user.id)  # type: ignore
     db.session.add(sheet)
     db.session.commit()
     return jsonify({"id": sheet.id, "name": sheet.name})
@@ -63,24 +64,21 @@ def record_action():
     if not request.is_json:
         return jsonify({"error": "JSON body required"}), 400
     payload = request.get_json()
+    if not payload:
+        return jsonify({"error": "Invalid payload"}), 400
     sheet_id = payload.get("sheet_id")
     state = payload.get("elements", [])
     sheet = Sheet.query.filter_by(id=sheet_id, user_id=current_user.id).first()
     if not sheet:
         abort(404)
 
-    action = Action(
-        sheet_id=sheet_id,
-        user_id=current_user.id,
-        json_blob=json.dumps(payload),
-        ts=datetime.utcnow(),
-    )
+    action = Action(sheet_id=sheet_id, user_id=current_user.id, json_blob=json.dumps(payload), ts=datetime.now(timezone.utc))  # type: ignore
     db.session.add(action)
 
     # Replace elements with current state
     Element.query.filter_by(sheet_id=sheet_id).delete()
     for el in state:
-        db.session.add(Element(sheet_id=sheet_id, json_blob=json.dumps(el)))
+        db.session.add(Element(sheet_id=sheet_id, json_blob=json.dumps(el)))  # type: ignore
 
     db.session.commit()
     return jsonify({"status": "ok"})
@@ -89,14 +87,27 @@ def record_action():
 @sheet_bp.delete("/<int:sheet_id>")
 @login_required
 def delete_sheet(sheet_id: int):
-    """Delete a sheet, ensuring at least one remains."""
+    """Delete a sheet. If it's the last one, create a new one."""
     sheet = Sheet.query.filter_by(id=sheet_id, user_id=current_user.id).first()
     if not sheet:
         abort(404)
-    if Sheet.query.filter_by(user_id=current_user.id).count() <= 1:
-        return jsonify({"error": "last-sheet"}), 400
+
+    is_last_sheet = Sheet.query.filter_by(user_id=current_user.id).count() <= 1
+
     Element.query.filter_by(sheet_id=sheet_id).delete()
     Action.query.filter_by(sheet_id=sheet_id).delete()
     db.session.delete(sheet)
+
+    if is_last_sheet:
+        new_sheet = Sheet(name="New Sheet", user_id=current_user.id)  # type: ignore
+        db.session.add(new_sheet)
+        db.session.commit()
+        return jsonify(
+            {
+                "status": "deleted_and_created",
+                "new_sheet": {"id": new_sheet.id, "name": new_sheet.name},
+            }
+        )
+
     db.session.commit()
     return jsonify({"status": "deleted"})

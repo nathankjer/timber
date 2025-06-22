@@ -6,7 +6,7 @@ Run with:
 """
 
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 from flask import Flask
@@ -65,7 +65,14 @@ def test_user_create_and_password_check(app):
         assert user.check_password("wrong") is False
         # created_at is a datetime near now
         assert isinstance(user.created_at, datetime)
-        assert abs((datetime.utcnow() - user.created_at).total_seconds()) < 5
+        assert (
+            abs(
+                (
+                    datetime.now(timezone.utc).replace(tzinfo=None) - user.created_at
+                ).total_seconds()
+            )
+            < 5
+        )
 
 
 def test_user_create_duplicate_email_raises_value_error(app):

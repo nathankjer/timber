@@ -6,7 +6,7 @@ Run with:
 """
 
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 sys.path.append("src")
@@ -83,8 +83,8 @@ def test_list_and_create_sheet_default_name():
     app, client = _make_client()
     with app.app_context():
         # Create a new sheet (there may already be one from registration)
-        new = _create_sheet(client)  # no name → "Untitled"
-        assert new["name"] == "Untitled"
+        new = _create_sheet(client)  # no name → "New Sheet"
+        assert new["name"] == "New Sheet"
 
         # Fetch the full list; we only assert that our sheet is in it
         resp = client.get("/sheet")
@@ -93,7 +93,7 @@ def test_list_and_create_sheet_default_name():
 
         # Our created sheet must be present, with the right name
         assert any(
-            item["id"] == new["id"] and item["name"] == "Untitled" for item in data
+            item["id"] == new["id"] and item["name"] == "New Sheet" for item in data
         )
         # And there is at least one sheet
         assert len(data) >= 1
@@ -135,7 +135,9 @@ def test_update_sheet_all_error_branches_and_success():
         # 4) Successful rename
         resp = client.put(f"/sheet/{sid}", json={"name": "Renamed"})
         assert resp.status_code == 200 and resp.get_json()["name"] == "Renamed"
-        assert Sheet.query.filter_by(id=sid).first().name == "Renamed"
+        renamed_sheet = Sheet.query.filter_by(id=sid).first()
+        assert renamed_sheet is not None
+        assert renamed_sheet.name == "Renamed"
 
 
 def test_record_action_all_branches_and_element_replacement():
@@ -171,12 +173,12 @@ def test_record_action_all_branches_and_element_replacement():
         assert Action.query.filter_by(sheet_id=sid).count() == 2
 
 
-def test_delete_sheet_404_last_sheet_and_success():
+def test_delete_sheet_all_branches():
     app, client = _make_client()
     with app.app_context():
         # Create two extra sheets on top of the initial one
         a_id = _create_sheet(client, name="A")["id"]
-        b_id = _create_sheet(client, name="B")["id"]
+        _create_sheet(client, name="B")["id"]
 
         # 1) deleting a non‐existent sheet → 404
         assert client.delete("/sheet/999").status_code == 404
@@ -185,23 +187,29 @@ def test_delete_sheet_404_last_sheet_and_success():
         resp = client.delete(f"/sheet/{a_id}")
         assert resp.status_code == 200 and resp.get_json()["status"] == "deleted"
 
-        # 3) delete B (still allowed: now initial + B = 2 before deleting)
-        resp2 = client.delete(f"/sheet/{b_id}")
-        assert resp2.status_code == 200
+        # 3) delete all remaining sheets; last one should be replaced
+        sheets_left = client.get("/sheet").get_json()
+        for sheet in sheets_left:
+            resp = client.delete(f"/sheet/{sheet['id']}")
+            assert resp.status_code == 200
 
-        # 4) now only one sheet remains → last‐sheet guard
-        remaining = client.get("/sheet").get_json()
-        assert len(remaining) == 1
-        only_id = remaining[0]["id"]
-        resp3 = client.delete(f"/sheet/{only_id}")
-        assert resp3.status_code == 400 and resp3.get_json()["error"] == "last-sheet"
+        # The last deletion should have created a new sheet
+        final_json = resp.get_json()
+        assert final_json["status"] == "deleted_and_created"
+        assert "new_sheet" in final_json
+
+        # 4) Verify the new sheet is the only one left
+        final_sheets = client.get("/sheet").get_json()
+        assert len(final_sheets) == 1
+        assert final_sheets[0]["id"] == final_json["new_sheet"]["id"]
+        assert final_sheets[0]["name"] == "New Sheet"
 
         # 5) test cleanup: create C, add Element+Action, then delete → elements/actions gone
         c_id = _create_sheet(client, name="C")["id"]
 
         # inject one element & one action properly
-        el = Element(sheet_id=c_id, json_blob="{}")
-        act = Action(sheet_id=c_id, user_id=1, json_blob="{}", ts=datetime.utcnow())
+        el = Element(sheet_id=c_id, json_blob="{}")  # type: ignore
+        act = Action(sheet_id=c_id, user_id=1, json_blob="{}", ts=datetime.now(timezone.utc))  # type: ignore
         db.session.add(el)
         db.session.add(act)
         db.session.commit()

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask_login import UserMixin
 from sqlalchemy.exc import IntegrityError
@@ -15,11 +15,11 @@ class User(db.Model, UserMixin):  # type: ignore
     name = db.Column(db.String(255), nullable=False)
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(128), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     @classmethod
     def create(cls, email: str, name: str, password: str) -> "User":
-        user = cls(email=email, name=name)
+        user = cls(email=email, name=name)  # type: ignore
         user.set_password(password)
         db.session.add(user)
         try:
@@ -44,9 +44,11 @@ class Sheet(db.Model):  # type: ignore
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     name = db.Column(db.String(255), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(
-        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
     user = db.relationship("User", backref="sheets")
@@ -73,7 +75,7 @@ class Action(db.Model):  # type: ignore
     sheet_id = db.Column(db.Integer, db.ForeignKey("sheets.id"), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     json_blob = db.Column(db.Text, nullable=False)
-    ts = db.Column(db.DateTime, default=datetime.utcnow)
+    ts = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     sheet = db.relationship("Sheet", backref="actions")
     user = db.relationship("User", backref="actions")
