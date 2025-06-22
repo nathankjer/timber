@@ -33,64 +33,77 @@ function setCurrentView(view) {
   // Convert discrete view to rotation angles
   switch (view) {
     case "+X":
-      rotationX = 0;
-      rotationY = -Math.PI / 2;
-      rotationZ = 0;
+      globalThis.rotationX = 0;
+      globalThis.rotationY = -Math.PI / 2;
+      globalThis.rotationZ = 0;
       break;
     case "-X":
-      rotationX = 0;
-      rotationY = Math.PI / 2;
-      rotationZ = 0;
+      globalThis.rotationX = 0;
+      globalThis.rotationY = Math.PI / 2;
+      globalThis.rotationZ = 0;
       break;
     case "+Y":
-      rotationX = 0;
-      rotationY = 0;
-      rotationZ = Math.PI / 2;
+      globalThis.rotationX = 0;
+      globalThis.rotationY = 0;
+      globalThis.rotationZ = Math.PI / 2;
       break;
     case "-Y":
-      rotationX = 0;
-      rotationY = Math.PI;
-      rotationZ = -Math.PI / 2;
+      globalThis.rotationX = 0;
+      globalThis.rotationY = Math.PI;
+      globalThis.rotationZ = -Math.PI / 2;
       break;
     case "+Z":
-      rotationX = 0;
-      rotationY = 0;
-      rotationZ = 0;
+      globalThis.rotationX = 0;
+      globalThis.rotationY = 0;
+      globalThis.rotationZ = 0;
       break;
     case "-Z":
-      rotationX = 0;
-      rotationY = Math.PI;
-      rotationZ = 0;
+      globalThis.rotationX = 0;
+      globalThis.rotationY = Math.PI;
+      globalThis.rotationZ = 0;
       break;
   }
 }
 
 // Rotation state for continuous rotation
-let rotationX = 0; // rotation around X axis (pitch)
-let rotationY = 0; // rotation around Y axis (yaw) 
-let rotationZ = 0; // rotation around Z axis (roll)
-let isRotating = false;
-let rotationStartX = 0;
-let rotationStartY = 0;
-let rotationOrigX = 0;
-let rotationOrigY = 0;
-let rotationOrigZ = 0;
-let rotationMode = "xy";
+if (typeof globalThis.rotationX === "undefined") globalThis.rotationX = 0; // rotation around X axis (pitch)
+if (typeof globalThis.rotationY === "undefined") globalThis.rotationY = 0; // rotation around Y axis (yaw)
+if (typeof globalThis.rotationZ === "undefined") globalThis.rotationZ = 0; // rotation around Z axis (roll)
+if (typeof globalThis.isRotating === "undefined") globalThis.isRotating = false;
+if (typeof globalThis.rotationStartX === "undefined")
+  globalThis.rotationStartX = 0;
+if (typeof globalThis.rotationStartY === "undefined")
+  globalThis.rotationStartY = 0;
+if (typeof globalThis.rotationOrigX === "undefined")
+  globalThis.rotationOrigX = 0;
+if (typeof globalThis.rotationOrigY === "undefined")
+  globalThis.rotationOrigY = 0;
+if (typeof globalThis.rotationOrigZ === "undefined")
+  globalThis.rotationOrigZ = 0;
+
+if (typeof globalThis.zoom === "undefined") globalThis.zoom = 1;
+if (typeof globalThis.panX === "undefined") globalThis.panX = 0;
+if (typeof globalThis.panY === "undefined") globalThis.panY = 0;
+if (typeof globalThis.panStartX === "undefined") globalThis.panStartX = 0;
+if (typeof globalThis.panStartY === "undefined") globalThis.panStartY = 0;
+if (typeof globalThis.panOrigX === "undefined") globalThis.panOrigX = 0;
+if (typeof globalThis.panOrigY === "undefined") globalThis.panOrigY = 0;
+if (typeof globalThis.isPanning === "undefined") globalThis.isPanning = false;
 
 // Convert rotation angles to a 3x3 rotation matrix
 function getRotationMatrix() {
-  const cx = Math.cos(rotationX);
-  const sx = Math.sin(rotationX);
-  const cy = Math.cos(rotationY);
-  const sy = Math.sin(rotationY);
-  const cz = Math.cos(rotationZ);
-  const sz = Math.sin(rotationZ);
-  
+  const cx = Math.cos(globalThis.rotationX);
+  const sx = Math.sin(globalThis.rotationX);
+  const cy = Math.cos(globalThis.rotationY);
+  const sy = Math.sin(globalThis.rotationY);
+  const cz = Math.cos(globalThis.rotationZ);
+  const sz = Math.sin(globalThis.rotationZ);
+
   // Combined rotation matrix (Z * Y * X)
   return [
     [cy * cz, sx * sy * cz - cx * sz, cx * sy * cz + sx * sz],
     [cy * sz, sx * sy * sz + cx * cz, cx * sy * sz - sx * cz],
-    [-sy, sx * cy, cx * cy]
+    [-sy, sx * cy, cx * cy],
   ];
 }
 
@@ -99,21 +112,21 @@ function rotatePoint(p, matrix) {
   return {
     x: matrix[0][0] * p.x + matrix[0][1] * p.y + matrix[0][2] * p.z,
     y: matrix[1][0] * p.x + matrix[1][1] * p.y + matrix[1][2] * p.z,
-    z: matrix[2][0] * p.x + matrix[2][1] * p.y + matrix[2][2] * p.z
+    z: matrix[2][0] * p.x + matrix[2][1] * p.y + matrix[2][2] * p.z,
   };
 }
 
 // Start rotation when shift is held and mouse is dragged
 function startRotation(ev) {
   if (!ev.shiftKey) return;
-  
-  isRotating = true;
-  rotationStartX = ev.clientX;
-  rotationStartY = ev.clientY;
-  rotationOrigX = rotationX;
-  rotationOrigY = rotationY;
-  rotationOrigZ = rotationZ;
-  
+
+  globalThis.isRotating = true;
+  globalThis.rotationStartX = ev.clientX;
+  globalThis.rotationStartY = ev.clientY;
+  globalThis.rotationOrigX = globalThis.rotationX;
+  globalThis.rotationOrigY = globalThis.rotationY;
+  globalThis.rotationOrigZ = globalThis.rotationZ;
+
   document.addEventListener("mousemove", onRotation);
   document.addEventListener("mouseup", endRotation);
   ev.preventDefault();
@@ -122,38 +135,30 @@ function startRotation(ev) {
 
 // Handle rotation during mouse drag
 async function onRotation(ev) {
-  if (!isRotating) return;
-  
-  const dx = ev.clientX - rotationStartX;
-  const dy = ev.clientY - rotationStartY;
-  
+  if (!globalThis.isRotating) return;
+
+  const dx = ev.clientX - globalThis.rotationStartX;
+  const dy = ev.clientY - globalThis.rotationStartY;
+
   // Scale factors for sensitivity
   const sensitivityX = 0.01; // Y rotation (horizontal mouse movement)
   const sensitivityY = 0.01; // X rotation (vertical mouse movement)
   const sensitivityZ = 0.005; // Z rotation (combined movement, lower sensitivity)
 
-  rotationX = rotationOrigX + dy * sensitivityY;
-  rotationY = rotationOrigY + dx * sensitivityX;
-  rotationZ = rotationOrigZ + (dx + dy) * sensitivityZ;
-  
+  globalThis.rotationX = globalThis.rotationOrigX + dy * sensitivityY;
+  globalThis.rotationY = globalThis.rotationOrigY + dx * sensitivityX;
+  globalThis.rotationZ = globalThis.rotationOrigZ + (dx + dy) * sensitivityZ;
+
   await render(false);
 }
 
 // End rotation
 function endRotation() {
-  isRotating = false;
+  globalThis.isRotating = false;
   document.removeEventListener("mousemove", onRotation);
   document.removeEventListener("mouseup", endRotation);
 }
 
-let zoom = 1;
-let panX = 0;
-let panY = 0;
-let panStartX = 0;
-let panStartY = 0;
-let panOrigX = 0;
-let panOrigY = 0;
-let isPanning = false;
 const globalProps = { g: 9.81, units: "metric" };
 let unitConversionInfo = null; // Cache for unit conversion info
 let isRenderingProperties = false; // Flag to prevent multiple simultaneous calls
@@ -178,22 +183,22 @@ async function convertValue(value, unitType, direction = "to_display") {
   if (!unitConversionInfo) {
     await getUnitInfo();
   }
-  
+
   try {
     const resp = await fetch("/units/convert", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         unit_system: globalProps.units,
-        values: [{ unit_type: unitType, value: value, direction: direction }]
-      })
+        values: [{ unit_type: unitType, value: value, direction: direction }],
+      }),
     });
-    
+
     if (resp.ok) {
       const data = await resp.json();
       if (data.conversions && data.conversions.length > 0) {
         const conversion = data.conversions[0];
-        return direction === "to_display" 
+        return direction === "to_display"
           ? { value: conversion.display_value, symbol: conversion.symbol }
           : conversion.si_value;
       }
@@ -201,17 +206,18 @@ async function convertValue(value, unitType, direction = "to_display") {
   } catch (error) {
     console.error("Failed to convert value:", error);
   }
-  
+
   // Fallback to direct calculation if API fails
   return fallbackConvert(value, unitType, direction);
 }
 
 function fallbackConvert(value, unitType, direction) {
   const unitSystem = globalProps.units || "metric";
-  
+
   if (unitType === "length") {
     if (direction === "to_display") {
-      const displayValue = unitSystem === "metric" ? value * 1000 : value * 39.3701;
+      const displayValue =
+        unitSystem === "metric" ? value * 1000 : value * 39.3701;
       const symbol = unitSystem === "metric" ? "mm" : "in";
       return { value: displayValue, symbol: symbol };
     } else {
@@ -219,7 +225,8 @@ function fallbackConvert(value, unitType, direction) {
     }
   } else if (unitType === "force") {
     if (direction === "to_display") {
-      const displayValue = unitSystem === "metric" ? value / 1000 : value / 4.44822;
+      const displayValue =
+        unitSystem === "metric" ? value / 1000 : value / 4.44822;
       const symbol = unitSystem === "metric" ? "kN" : "lb";
       return { value: displayValue, symbol: symbol };
     } else {
@@ -227,7 +234,8 @@ function fallbackConvert(value, unitType, direction) {
     }
   } else if (unitType === "stress") {
     if (direction === "to_display") {
-      const displayValue = unitSystem === "metric" ? value / 1e9 : value / 6894760.0;
+      const displayValue =
+        unitSystem === "metric" ? value / 1e9 : value / 6894760.0;
       const symbol = unitSystem === "metric" ? "GPa" : "ksi";
       return { value: displayValue, symbol: symbol };
     } else {
@@ -235,7 +243,8 @@ function fallbackConvert(value, unitType, direction) {
     }
   } else if (unitType === "area") {
     if (direction === "to_display") {
-      const displayValue = unitSystem === "metric" ? value * 1e6 : value * 1550.0031;
+      const displayValue =
+        unitSystem === "metric" ? value * 1e6 : value * 1550.0031;
       const symbol = unitSystem === "metric" ? "mm²" : "in²";
       return { value: displayValue, symbol: symbol };
     } else {
@@ -243,7 +252,8 @@ function fallbackConvert(value, unitType, direction) {
     }
   } else if (unitType === "moment_of_inertia") {
     if (direction === "to_display") {
-      const displayValue = unitSystem === "metric" ? value * 1e12 : value * 2.4025e9;
+      const displayValue =
+        unitSystem === "metric" ? value * 1e12 : value * 2.4025e9;
       const symbol = unitSystem === "metric" ? "mm⁴" : "in⁴";
       return { value: displayValue, symbol: symbol };
     } else {
@@ -259,14 +269,15 @@ function fallbackConvert(value, unitType, direction) {
     }
   } else if (unitType === "moment") {
     if (direction === "to_display") {
-      const displayValue = unitSystem === "metric" ? value / 1000 : value / 1.35582;
+      const displayValue =
+        unitSystem === "metric" ? value / 1000 : value / 1.35582;
       const symbol = unitSystem === "metric" ? "kN·m" : "lb·ft";
       return { value: displayValue, symbol: symbol };
     } else {
       return unitSystem === "metric" ? value * 1000 : value * 1.35582;
     }
   }
-  
+
   return direction === "to_display" ? { value: value, symbol: "" } : value;
 }
 
@@ -297,10 +308,10 @@ async function createSheet() {
     sheets.push({ id: data.id, name: data.name });
     sheetId = data.id;
     elements = [];
-    
+
     // Clear calculation results when creating a new sheet
     lastCalculationResults = null;
-    
+
     renderSheetList();
     loadState();
   }
@@ -356,21 +367,23 @@ function projectPoint(p) {
 
 function unprojectDelta(dx, dy) {
   // Always use continuous rotation - approximate for small deltas
-  const matrix = getRotationMatrix();
   // For small deltas, we can approximate by applying inverse rotation
   // This is a simplified approach - for more accuracy we'd need full matrix inverse
-  const scale = 1 / zoom;
+  const scale = 1 / globalThis.zoom;
   return { x: dx * scale, y: -dy * scale, z: 0 };
 }
-const SNAP_PIXELS = 10;
+const SNAP_PIXELS = 20;
 
 function screenCoords(p) {
   const svg = document.getElementById("canvas");
   const rect = svg.getBoundingClientRect();
-  const cx = rect.width / 2 + panX;
-  const cy = rect.height / 2 + panY;
+  const cx = rect.width / 2 + globalThis.panX;
+  const cy = rect.height / 2 + globalThis.panY;
   const proj = projectPoint(p);
-  return { x: cx + (proj.x || 0) * zoom, y: cy + (proj.y || 0) * zoom };
+  return {
+    x: cx + (proj.x || 0) * globalThis.zoom,
+    y: cy + (proj.y || 0) * globalThis.zoom,
+  };
 }
 
 function distanceScreen(a, b) {
@@ -392,15 +405,20 @@ function distanceToSegment2D(p, a, b) {
 function isPointInPolygon(point, polygon) {
   let inside = false;
   for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    if (((polygon[i].y > point.y) !== (polygon[j].y > point.y)) &&
-        (point.x < (polygon[j].x - polygon[i].x) * (point.y - polygon[i].y) / (polygon[j].y - polygon[i].y) + polygon[i].x)) {
+    if (
+      polygon[i].y > point.y !== polygon[j].y > point.y &&
+      point.x <
+        ((polygon[j].x - polygon[i].x) * (point.y - polygon[i].y)) /
+          (polygon[j].y - polygon[i].y) +
+          polygon[i].x
+    ) {
       inside = !inside;
     }
   }
   return inside;
 }
 
-function axisInfo(view) {
+function axisInfo() {
   // Always return continuous rotation info - no discrete view mode
   return { h: { axis: "x", sign: 1 }, v: { axis: "y", sign: -1 } };
 }
@@ -412,7 +430,7 @@ function planeCorners(el) {
   if (el.points) {
     return el.points;
   }
-  
+
   // Legacy: if not point-based, calculate from dimensions
   const l = (el.length ?? 40) / 2;
   const w = (el.width ?? 40) / 2;
@@ -454,8 +472,8 @@ function planeScreenRect(el) {
 
 function solidScreenRect(el) {
   const info = axisInfo(currentView);
-  const h = (el[axisDims[info.h.axis]] ?? 30) * zoom;
-  const v = (el[axisDims[info.v.axis]] ?? 30) * zoom;
+  const h = (el[axisDims[info.h.axis]] ?? 30) * globalThis.zoom;
+  const v = (el[axisDims[info.v.axis]] ?? 30) * globalThis.zoom;
   const c = screenCoords(el);
   return {
     left: c.x - h / 2,
@@ -477,26 +495,26 @@ function nearestPointOnLine(p, a, b) {
 
 function getSnapPoints(ignoreId) {
   const pts = [];
-  
+
   elements.forEach((e) => {
     if (e.id === ignoreId) return;
-    
+
     // Add all points from all element types
     if (e.points) {
       // All elements now use points array
       if (e.type === "Support") {
-        e.points.forEach((p, i) => {
+        e.points.forEach((p) => {
           pts.push({ ...p, kind: "Support" });
         });
       } else if (e.type === "Load") {
-        e.points.forEach((p, i) => {
+        e.points.forEach((p) => {
           pts.push({ ...p, kind: "Load" });
         });
       } else if (e.type === "Member" || e.type === "Cable") {
-        e.points.forEach((p, i) => {
+        e.points.forEach((p) => {
           pts.push({ ...p, kind: "End" });
         });
-        
+
         // Add midpoint of member/cable
         if (e.points.length >= 2) {
           const midX = (e.points[0].x + e.points[1].x) / 2;
@@ -506,13 +524,16 @@ function getSnapPoints(ignoreId) {
         }
       } else if (e.type === "Plane") {
         // Point-based plane
-        e.points.forEach((p, i) => {
+        e.points.forEach((p) => {
           pts.push({ ...p, kind: "PlaneCorner" });
         });
-        
+
         // Add edge midpoints
         const edges = [
-          [0, 1], [1, 2], [2, 3], [3, 0]
+          [0, 1],
+          [1, 2],
+          [2, 3],
+          [3, 0],
         ];
         edges.forEach(([i, j]) => {
           const midX = (e.points[i].x + e.points[j].x) / 2;
@@ -520,23 +541,35 @@ function getSnapPoints(ignoreId) {
           const midZ = (e.points[i].z + e.points[j].z) / 2;
           pts.push({ x: midX, y: midY, z: midZ, kind: "PlaneEdgeMid" });
         });
-        
+
         // Add center of plane
-        const centerX = e.points.reduce((sum, p) => sum + p.x, 0) / e.points.length;
-        const centerY = e.points.reduce((sum, p) => sum + p.y, 0) / e.points.length;
-        const centerZ = e.points.reduce((sum, p) => sum + p.z, 0) / e.points.length;
+        const centerX =
+          e.points.reduce((sum, p) => sum + p.x, 0) / e.points.length;
+        const centerY =
+          e.points.reduce((sum, p) => sum + p.y, 0) / e.points.length;
+        const centerZ =
+          e.points.reduce((sum, p) => sum + p.z, 0) / e.points.length;
         pts.push({ x: centerX, y: centerY, z: centerZ, kind: "PlaneCenter" });
       } else if (e.type === "Solid") {
         // Point-based solid
-        e.points.forEach((p, i) => {
+        e.points.forEach((p) => {
           pts.push({ ...p, kind: "SolidCorner" });
         });
-        
+
         // Add edge midpoints
         const edges = [
-          [0, 1], [1, 2], [2, 3], [3, 0], // bottom face
-          [4, 5], [5, 6], [6, 7], [7, 4], // top face
-          [0, 4], [1, 5], [2, 6], [3, 7]  // connecting edges
+          [0, 1],
+          [1, 2],
+          [2, 3],
+          [3, 0], // bottom face
+          [4, 5],
+          [5, 6],
+          [6, 7],
+          [7, 4], // top face
+          [0, 4],
+          [1, 5],
+          [2, 6],
+          [3, 7], // connecting edges
         ];
         edges.forEach(([i, j]) => {
           const midX = (e.points[i].x + e.points[j].x) / 2;
@@ -544,7 +577,7 @@ function getSnapPoints(ignoreId) {
           const midZ = (e.points[i].z + e.points[j].z) / 2;
           pts.push({ x: midX, y: midY, z: midZ, kind: "SolidEdgeMid" });
         });
-        
+
         // Add face centers
         const faces = [
           [0, 1, 2, 3], // bottom face
@@ -552,19 +585,30 @@ function getSnapPoints(ignoreId) {
           [0, 1, 5, 4], // front face
           [2, 3, 7, 6], // back face
           [0, 3, 7, 4], // left face
-          [1, 2, 6, 5]  // right face
+          [1, 2, 6, 5], // right face
         ];
-        faces.forEach((face, faceIndex) => {
-          const centerX = face.reduce((sum, i) => sum + e.points[i].x, 0) / face.length;
-          const centerY = face.reduce((sum, i) => sum + e.points[i].y, 0) / face.length;
-          const centerZ = face.reduce((sum, i) => sum + e.points[i].z, 0) / face.length;
-          pts.push({ x: centerX, y: centerY, z: centerZ, kind: "SolidFaceCenter" });
+        faces.forEach((face) => {
+          const centerX =
+            face.reduce((sum, i) => sum + e.points[i].x, 0) / face.length;
+          const centerY =
+            face.reduce((sum, i) => sum + e.points[i].y, 0) / face.length;
+          const centerZ =
+            face.reduce((sum, i) => sum + e.points[i].z, 0) / face.length;
+          pts.push({
+            x: centerX,
+            y: centerY,
+            z: centerZ,
+            kind: "SolidFaceCenter",
+          });
         });
-        
+
         // Add center of solid
-        const centerX = e.points.reduce((sum, p) => sum + p.x, 0) / e.points.length;
-        const centerY = e.points.reduce((sum, p) => sum + p.y, 0) / e.points.length;
-        const centerZ = e.points.reduce((sum, p) => sum + p.z, 0) / e.points.length;
+        const centerX =
+          e.points.reduce((sum, p) => sum + p.x, 0) / e.points.length;
+        const centerY =
+          e.points.reduce((sum, p) => sum + p.y, 0) / e.points.length;
+        const centerZ =
+          e.points.reduce((sum, p) => sum + p.z, 0) / e.points.length;
         pts.push({ x: centerX, y: centerY, z: centerZ, kind: "SolidCenter" });
       }
     } else {
@@ -581,8 +625,13 @@ function getSnapPoints(ignoreId) {
       });
       } else if (e.type === "Member" || e.type === "Cable") {
       pts.push({ x: e.x, y: e.y, z: e.z, kind: "End" });
-      pts.push({ x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z, kind: "End" });
-        
+        pts.push({
+          x: e.x2 ?? e.x,
+          y: e.y2 ?? e.y,
+          z: e.z2 ?? e.z,
+          kind: "End",
+        });
+
         // Add midpoint of member/cable
         const midX = (e.x + (e.x2 ?? e.x)) / 2;
         const midY = (e.y + (e.y2 ?? e.y)) / 2;
@@ -685,7 +734,7 @@ function applySnapping(el) {
       let bestSnap = null;
       let bestDist = SNAP_PIXELS;
       let closestPointIndex = -1;
-      
+
       el.points.forEach((p, i) => {
         const sc = screenCoords(p);
         pts.forEach((snapPt) => {
@@ -706,16 +755,16 @@ function applySnapping(el) {
           }
         });
       });
-      
+
       if (bestSnap && closestPointIndex >= 0) {
         // Calculate the offset needed to move the closest point to the snap point
         const closestPoint = el.points[closestPointIndex];
         const offsetX = bestSnap.x - closestPoint.x;
         const offsetY = bestSnap.y - closestPoint.y;
         const offsetZ = bestSnap.z - closestPoint.z;
-        
+
         // Move all points of the object by the same offset
-        el.points.forEach(p => {
+        el.points.forEach((p) => {
           p.x += offsetX;
           p.y += offsetY;
           p.z += offsetZ;
@@ -723,7 +772,7 @@ function applySnapping(el) {
       }
     } else {
       // For other elements (Member, Cable, Load, Support), snap each point individually
-      el.points.forEach(p => snapObj(p));
+      el.points.forEach((p) => snapObj(p));
     }
   } else {
     // Legacy fallback for any remaining elements
@@ -759,22 +808,30 @@ function applySnapping(el) {
   }
 }
 
-async function addNumberInput(container, label, prop, el, unitType = null, pointIndex = -1) {
+async function addNumberInput(
+  container,
+  label,
+  prop,
+  el,
+  unitType = null,
+  pointIndex = -1,
+) {
   const div = document.createElement("div");
   div.className = "mb-2";
-  
+
   // Get current value (always in SI units)
-  let currentValue = pointIndex > -1 ? el.points[pointIndex][prop] : (el[prop] ?? 0);
+  let currentValue =
+    pointIndex > -1 ? el.points[pointIndex][prop] : (el[prop] ?? 0);
   let displayValue = currentValue;
   let unitSymbol = "";
-  
+
   if (unitType) {
     // Use backend unit conversion API
     const conversion = await convertValue(currentValue, unitType, "to_display");
     displayValue = conversion.value.toFixed(3);
     unitSymbol = conversion.symbol;
   }
-  
+
   // Create input with unit label
   if (unitType) {
     div.innerHTML = `
@@ -787,12 +844,12 @@ async function addNumberInput(container, label, prop, el, unitType = null, point
   } else {
     div.innerHTML = `<label class='form-label'>${label}</label><input id='prop-${prop}' class='form-control form-control-sm' type='text' value='${displayValue}'>`;
   }
-  
+
   const input = div.querySelector("input");
   input.addEventListener("input", async (ev) => {
     const text = ev.target.value;
     let v;
-    
+
     if (unitType) {
       try {
         // Parse value and convert from display units to SI
@@ -802,13 +859,13 @@ async function addNumberInput(container, label, prop, el, unitType = null, point
         } else {
           v = 0;
         }
-      } catch (e) {
+      } catch {
         v = 0;
       }
     } else {
       v = parseFloat(text);
     }
-    
+
     if (Number.isFinite(v)) {
       if (pointIndex > -1) {
         el.points[pointIndex][prop] = v;
@@ -828,7 +885,7 @@ function schedulePropertyUpdate() {
   if (propertyUpdateTimeout) {
     clearTimeout(propertyUpdateTimeout);
   }
-  
+
   // Schedule a new property update after 100ms
   propertyUpdateTimeout = setTimeout(async () => {
     if (!isRenderingProperties) {
@@ -844,68 +901,84 @@ async function renderProperties() {
     return;
   }
   isRenderingProperties = true;
-  
+
   try {
-    const pane = document.getElementById("props-content");
-    pane.innerHTML = "";
-    if (selectedId !== null) {
-      const el = elements.find((e) => e.id === selectedId);
-      if (el) {
-        const form = document.createElement("div");
-        form.innerHTML = `<div class="mb-2">Type: <strong>${el.type}</strong></div>`;
-        
+  const pane = document.getElementById("props-content");
+  pane.innerHTML = "";
+  if (selectedId !== null) {
+    const el = elements.find((e) => e.id === selectedId);
+    if (el) {
+      const form = document.createElement("div");
+      form.innerHTML = `<div class="mb-2">Type: <strong>${el.type}</strong></div>`;
+
         // Show points for all element types
         if (el.points) {
           for (let i = 0; i < el.points.length; i++) {
-            form.innerHTML += `<div class="mb-2 fw-bold">Point ${i+1}</div>`;
+            form.innerHTML += `<div class="mb-2 fw-bold">Point ${i + 1}</div>`;
             await addNumberInput(form, "x", "x", el, "length", i);
             await addNumberInput(form, "y", "y", el, "length", i);
             await addNumberInput(form, "z", "z", el, "length", i);
           }
         }
-        
-        if (el.type === "Member" || el.type === "Cable") {
-          await addNumberInput(form, "Young's Modulus (E)", "E", el, "stress");
-          await addNumberInput(form, "Cross Sectional Area (A)", "A", el, "area");
-          await addNumberInput(form, "Second Moment of Inertia (I)", "I", el, "moment_of_inertia");
-        } else if (el.type === "Support") {
-          ["ux", "uy", "rz"].forEach((p) => {
-            const div = document.createElement("div");
-            div.className = "form-check form-check-inline me-2";
-            div.innerHTML = `<input class='form-check-input' type='checkbox' id='prop-${p}'> <label class='form-check-label' for='prop-${p}'>${p}</label>`;
-            const input = div.querySelector("input");
-            input.checked = el[p] !== false;
-            input.addEventListener("change", () => {
-              el[p] = input.checked;
-              saveState();
-            });
-            form.appendChild(div);
-          });
-        } else if (el.type === "Load") {
-          await addNumberInput(form, "amount", "amount", el, "force");
-        }
-        pane.appendChild(form);
-        document.getElementById("delete-btn").disabled = false;
-      }
-    } else {
-      document.getElementById("delete-btn").disabled = true;
-    }
 
-    const globalDiv = document.createElement("div");
-    globalDiv.innerHTML = `<hr><h6>Global</h6>
-      <div class='mb-2'><label class='form-label'>Units</label><select id='global-units' class='form-select form-select-sm'>
-        <option value='metric'>Metric</option><option value='imperial'>Imperial</option></select></div>`;
-    pane.appendChild(globalDiv);
-    
+      if (el.type === "Member" || el.type === "Cable") {
+          await addNumberInput(form, "Young's Modulus (E)", "E", el, "stress");
+          await addNumberInput(
+            form,
+            "Cross Sectional Area (A)",
+            "A",
+            el,
+            "area",
+          );
+          await addNumberInput(
+            form,
+            "Second Moment of Inertia (I)",
+            "I",
+            el,
+            "moment_of_inertia",
+        );
+      } else if (el.type === "Support") {
+        ["ux", "uy", "rz"].forEach((p) => {
+          const div = document.createElement("div");
+          div.className = "form-check form-check-inline me-2";
+          div.innerHTML = `<input class='form-check-input' type='checkbox' id='prop-${p}'> <label class='form-check-label' for='prop-${p}'>${p}</label>`;
+          const input = div.querySelector("input");
+          input.checked = el[p] !== false;
+          input.addEventListener("change", () => {
+            el[p] = input.checked;
+            saveState();
+          });
+          form.appendChild(div);
+        });
+      } else if (el.type === "Load") {
+          await addNumberInput(form, "amount", "amount", el, "force");
+      }
+      pane.appendChild(form);
+      document.getElementById("delete-btn").disabled = false;
+    }
+  } else {
+    document.getElementById("delete-btn").disabled = true;
+  }
+
+  const globalDiv = document.createElement("div");
+  globalDiv.innerHTML = `<hr><h6>Global</h6>
+    <div class='mb-2'><label class='form-label'>Units</label><select id='global-units' class='form-select form-select-sm'>
+      <option value='metric'>Metric</option><option value='imperial'>Imperial</option></select></div>`;
+  pane.appendChild(globalDiv);
+
     // Add gravity input with units using backend API
     const gravityDiv = document.createElement("div");
     gravityDiv.className = "mb-2";
-    
+
     // Get gravity display value and unit from backend
-    const gravityConversion = await convertValue(globalProps.g, "acceleration", "to_display");
+    const gravityConversion = await convertValue(
+      globalProps.g,
+      "acceleration",
+      "to_display",
+    );
     const gravityValue = gravityConversion.value.toFixed(3);
     const gravityUnit = gravityConversion.symbol;
-    
+
     gravityDiv.innerHTML = `
       <label class='form-label'>Gravity (g)</label>
       <div class='input-group input-group-sm'>
@@ -914,20 +987,20 @@ async function renderProperties() {
       </div>
     `;
     pane.appendChild(gravityDiv);
-    
+
     const gInput = gravityDiv.querySelector("#global-g");
     gInput.addEventListener("input", async (ev) => {
       const text = ev.target.value;
       let v = parseFloat(text);
-      
+
       if (Number.isFinite(v)) {
         // Convert from display units to SI using backend API
         globalProps.g = await convertValue(v, "acceleration", "from_display");
       }
     });
-    
-    const sel = globalDiv.querySelector("#global-units");
-    sel.value = globalProps.units;
+
+  const sel = globalDiv.querySelector("#global-units");
+  sel.value = globalProps.units;
     sel.addEventListener("change", async (ev) => {
     const old = globalProps.units;
     globalProps.units = ev.target.value;
@@ -951,22 +1024,46 @@ async function renderProperties() {
 function updateViewButtonStates() {
   // Determine which discrete view is closest to current rotation
   const tolerance = Math.PI / 4; // 45 degrees tolerance
-  
+
   let closestView = null;
-  if (Math.abs(rotationX) < tolerance && Math.abs(rotationY) < tolerance && Math.abs(rotationZ) < tolerance) {
+  if (
+    Math.abs(globalThis.rotationX) < tolerance &&
+    Math.abs(globalThis.rotationY) < tolerance &&
+    Math.abs(globalThis.rotationZ) < tolerance
+  ) {
     closestView = "+Z";
-  } else if (Math.abs(rotationX) < tolerance && Math.abs(rotationY - Math.PI) < tolerance && Math.abs(rotationZ) < tolerance) {
+  } else if (
+    Math.abs(globalThis.rotationX) < tolerance &&
+    Math.abs(globalThis.rotationY - Math.PI) < tolerance &&
+    Math.abs(globalThis.rotationZ) < tolerance
+  ) {
     closestView = "-Z";
-  } else if (Math.abs(rotationX) < tolerance && Math.abs(rotationY - Math.PI/2) < tolerance && Math.abs(rotationZ) < tolerance) {
+  } else if (
+    Math.abs(globalThis.rotationX) < tolerance &&
+    Math.abs(globalThis.rotationY - Math.PI / 2) < tolerance &&
+    Math.abs(globalThis.rotationZ) < tolerance
+  ) {
     closestView = "-X";
-  } else if (Math.abs(rotationX) < tolerance && Math.abs(rotationY + Math.PI/2) < tolerance && Math.abs(rotationZ) < tolerance) {
+  } else if (
+    Math.abs(globalThis.rotationX) < tolerance &&
+    Math.abs(globalThis.rotationY + Math.PI / 2) < tolerance &&
+    Math.abs(globalThis.rotationZ) < tolerance
+  ) {
     closestView = "+X";
-  } else if (Math.abs(rotationX) < tolerance && Math.abs(rotationY) < tolerance && Math.abs(rotationZ - Math.PI/2) < tolerance) {
+  } else if (
+    Math.abs(globalThis.rotationX) < tolerance &&
+    Math.abs(globalThis.rotationY) < tolerance &&
+    Math.abs(globalThis.rotationZ - Math.PI / 2) < tolerance
+  ) {
     closestView = "+Y";
-  } else if (Math.abs(rotationX) < tolerance && Math.abs(rotationY - Math.PI) < tolerance && Math.abs(rotationZ + Math.PI/2) < tolerance) {
+  } else if (
+    Math.abs(globalThis.rotationX) < tolerance &&
+    Math.abs(globalThis.rotationY - Math.PI) < tolerance &&
+    Math.abs(globalThis.rotationZ + Math.PI / 2) < tolerance
+  ) {
     closestView = "-Y";
   }
-  
+
   document.querySelectorAll(".view-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.view === closestView);
   });
@@ -976,21 +1073,22 @@ async function render(updateProps = true) {
   const svg = document.getElementById("canvas");
   svg.innerHTML = "";
   const rect = svg.getBoundingClientRect();
-  const cx = rect.width / 2 + panX;
-  const cy = rect.height / 2 + panY;
-  
+  const cx = rect.width / 2 + globalThis.panX;
+  const cy = rect.height / 2 + globalThis.panY;
+
   // Update current view display
-  const rx = (rotationX * 180 / Math.PI).toFixed(1);
-  const ry = (rotationY * 180 / Math.PI).toFixed(1);
-  const rz = (rotationZ * 180 / Math.PI).toFixed(1);
-  document.getElementById("current-view").textContent = `Rotated (X:${rx}°, Y:${ry}°, Z:${rz}°)`;
+  const rx = ((globalThis.rotationX * 180) / Math.PI).toFixed(1);
+  const ry = ((globalThis.rotationY * 180) / Math.PI).toFixed(1);
+  const rz = ((globalThis.rotationZ * 180) / Math.PI).toFixed(1);
+  document.getElementById("current-view").textContent =
+    `Rotated (X:${rx}°, Y:${ry}°, Z:${rz}°)`;
 
   // First, render all points as dots
   const pointMap = new Map();
   elements.forEach((el) => {
     if (el.points) {
       // All elements now use points array
-      el.points.forEach((p, i) => {
+      el.points.forEach((p) => {
         const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
         if (!pointMap.has(key)) {
           pointMap.set(key, { ...p, type: el.type });
@@ -1015,10 +1113,15 @@ async function render(updateProps = true) {
           pointMap.set(key1, { x: el.x, y: el.y, z: el.z, type: "Member" });
         }
         if (!pointMap.has(key2)) {
-          pointMap.set(key2, { x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z, type: "Member" });
+          pointMap.set(key2, {
+            x: el.x2 ?? el.x,
+            y: el.y2 ?? el.y,
+            z: el.z2 ?? el.z,
+            type: "Member",
+          });
         }
       } else if (el.type === "Plane" || el.type === "Solid") {
-        (el.points || []).forEach(p => {
+        (el.points || []).forEach((p) => {
           const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
           if (!pointMap.has(key)) {
             pointMap.set(key, { ...p, type: el.type });
@@ -1029,15 +1132,18 @@ async function render(updateProps = true) {
   });
 
   // Render points as dots
-  pointMap.forEach((point, key) => {
+  pointMap.forEach((point) => {
     const p = projectPoint({ x: point.x, y: point.y, z: point.z });
-    const sx = cx + (p.x || 0) * zoom;
-    const sy = cy + (p.y || 0) * zoom;
-    
-    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    const sx = cx + (p.x || 0) * globalThis.zoom;
+    const sy = cy + (p.y || 0) * globalThis.zoom;
+
+    const dot = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "circle",
+    );
     dot.setAttribute("cx", sx);
     dot.setAttribute("cy", sy);
-    dot.setAttribute("r", 3 * zoom);
+    dot.setAttribute("r", 3 * globalThis.zoom);
     dot.setAttribute("fill", point.type === "Support" ? "green" : "blue");
     dot.setAttribute("stroke", "black");
     dot.setAttribute("stroke-width", 1);
@@ -1059,60 +1165,65 @@ async function render(updateProps = true) {
       const p1 = projectPoint(el.points[0]);
       const p2 = projectPoint(el.points[1]);
       shape = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      shape.setAttribute("x1", cx + (p1.x || 0) * zoom);
-      shape.setAttribute("y1", cy + (p1.y || 0) * zoom);
-      shape.setAttribute("x2", cx + (p2.x || 0) * zoom);
-      shape.setAttribute("y2", cy + (p2.y || 0) * zoom);
+      shape.setAttribute("x1", cx + (p1.x || 0) * globalThis.zoom);
+      shape.setAttribute("y1", cy + (p1.y || 0) * globalThis.zoom);
+      shape.setAttribute("x2", cx + (p2.x || 0) * globalThis.zoom);
+      shape.setAttribute("y2", cy + (p2.y || 0) * globalThis.zoom);
       shape.setAttribute("stroke", "blue");
       shape.setAttribute("stroke-width", 2);
       if (el.type === "Cable") shape.setAttribute("stroke-dasharray", "4 2");
-    } else if (el.type === "Load") {
+      } else if (el.type === "Load") {
       // Treat loads like members with draggable endpoints
       const p1 = projectPoint(el.points[0]);
       const p2 = projectPoint(el.points[1]);
-      shape = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      shape.setAttribute("x1", cx + (p1.x || 0) * zoom);
-      shape.setAttribute("y1", cy + (p1.y || 0) * zoom);
-      shape.setAttribute("x2", cx + (p2.x || 0) * zoom);
-      shape.setAttribute("y2", cy + (p2.y || 0) * zoom);
-      shape.setAttribute("stroke", "red");
-      shape.setAttribute("stroke-width", 2);
-      
+        shape = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      shape.setAttribute("x1", cx + (p1.x || 0) * globalThis.zoom);
+      shape.setAttribute("y1", cy + (p1.y || 0) * globalThis.zoom);
+      shape.setAttribute("x2", cx + (p2.x || 0) * globalThis.zoom);
+      shape.setAttribute("y2", cy + (p2.y || 0) * globalThis.zoom);
+        shape.setAttribute("stroke", "red");
+        shape.setAttribute("stroke-width", 2);
+
       // Add arrowhead at the end point
       const dx = p2.x - p1.x;
       const dy = p2.y - p1.y;
       const len = Math.hypot(dx, dy) || 1;
       const nx = -dy / len;
       const ny = dx / len;
-      const arrowSize = 6 * zoom;
-      const b1x = cx + (p2.x || 0) * zoom + nx * arrowSize;
-      const b1y = cy + (p2.y || 0) * zoom + ny * arrowSize;
-      const b2x = cx + (p2.x || 0) * zoom - nx * arrowSize;
-      const b2y = cy + (p2.y || 0) * zoom - ny * arrowSize;
-      const tx = cx + (p2.x || 0) * zoom + (dx / len) * arrowSize * 1.5;
-      const ty = cy + (p2.y || 0) * zoom + (dy / len) * arrowSize * 1.5;
-      
-      const arrow = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-      arrow.setAttribute("points", `${b1x},${b1y} ${b2x},${b2y} ${tx},${ty}`);
-      arrow.setAttribute("fill", "red");
-      g.appendChild(arrow);
-      } else if (el.type === "Plane") {
-      // Always render planes - they should be visible in all views
-      const pts = el.points.map((p) => {
-          const pr = projectPoint(p);
-          return [cx + (pr.x || 0) * zoom, cy + (pr.y || 0) * zoom];
-        });
-        shape = document.createElementNS(
+      const arrowSize = 6 * globalThis.zoom;
+      const b1x = cx + (p2.x || 0) * globalThis.zoom + nx * arrowSize;
+      const b1y = cy + (p2.y || 0) * globalThis.zoom + ny * arrowSize;
+      const b2x = cx + (p2.x || 0) * globalThis.zoom - nx * arrowSize;
+      const b2y = cy + (p2.y || 0) * globalThis.zoom - ny * arrowSize;
+      const tx =
+        cx + (p2.x || 0) * globalThis.zoom + (dx / len) * arrowSize * 1.5;
+      const ty =
+        cy + (p2.y || 0) * globalThis.zoom + (dy / len) * arrowSize * 1.5;
+
+        const arrow = document.createElementNS(
           "http://www.w3.org/2000/svg",
           "polygon",
         );
-        shape.setAttribute("points", pts.map((pt) => pt.join(",")).join(" "));
-        shape.setAttribute("fill", "rgba(0,0,255,0.2)");
-        shape.setAttribute("stroke", "blue");
-      } else if (el.type === "Solid") {
+        arrow.setAttribute("points", `${b1x},${b1y} ${b2x},${b2y} ${tx},${ty}`);
+        arrow.setAttribute("fill", "red");
+        g.appendChild(arrow);
+    } else if (el.type === "Plane") {
+      // Always render planes - they should be visible in all views
+      const pts = el.points.map((p) => {
+        const pr = projectPoint(p);
+        return [
+          cx + (pr.x || 0) * globalThis.zoom,
+          cy + (pr.y || 0) * globalThis.zoom,
+        ];
+      });
+      shape = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      shape.setAttribute("points", pts.map((pt) => pt.join(",")).join(" "));
+      shape.setAttribute("fill", "rgba(0,0,255,0.2)");
+      shape.setAttribute("stroke", "blue");
+    } else if (el.type === "Solid") {
       const vertices = el.points;
-      const screen_vertices = vertices.map(p => screenCoords(p));
-      
+      const screen_vertices = vertices.map((p) => screenCoords(p));
+
       // Define the 6 faces of the cube
       const faces = [
         [0, 1, 2, 3], // bottom face
@@ -1120,31 +1231,49 @@ async function render(updateProps = true) {
         [0, 1, 5, 4], // front face
         [2, 3, 7, 6], // back face
         [0, 3, 7, 4], // left face
-        [1, 2, 6, 5]  // right face
+        [1, 2, 6, 5], // right face
       ];
 
       // Render each face as a transparent polygon
-      faces.forEach(face => {
-        const facePoints = face.map(i => screen_vertices[i]);
-        const shape = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-        shape.setAttribute("points", facePoints.map(p => `${p.x},${p.y}`).join(" "));
+      faces.forEach((face) => {
+        const facePoints = face.map((i) => screen_vertices[i]);
+        const shape = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "polygon",
+        );
+        shape.setAttribute(
+          "points",
+          facePoints.map((p) => `${p.x},${p.y}`).join(" "),
+        );
         shape.setAttribute("fill", "rgba(0,0,255,0.3)");
         shape.setAttribute("stroke", "blue");
         shape.setAttribute("stroke-width", 1);
         g.appendChild(shape);
       });
-      
+
       // Also render edges for better definition
       const edges = [
-        [0, 1], [1, 2], [2, 3], [3, 0], // bottom face
-        [4, 5], [5, 6], [6, 7], [7, 4], // top face
-        [0, 4], [1, 5], [2, 6], [3, 7]  // connecting edges
+        [0, 1],
+        [1, 2],
+        [2, 3],
+        [3, 0], // bottom face
+        [4, 5],
+        [5, 6],
+        [6, 7],
+        [7, 4], // top face
+        [0, 4],
+        [1, 5],
+        [2, 6],
+        [3, 7], // connecting edges
       ];
 
-      edges.forEach(edge => {
+      edges.forEach((edge) => {
         const p1 = screen_vertices[edge[0]];
         const p2 = screen_vertices[edge[1]];
-        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        const line = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "line",
+        );
         line.setAttribute("x1", p1.x);
         line.setAttribute("y1", p1.y);
         line.setAttribute("x2", p2.x);
@@ -1153,19 +1282,16 @@ async function render(updateProps = true) {
         line.setAttribute("stroke-width", 1);
         g.appendChild(line);
       });
-      } else if (el.type === "Support") {
-        shape = document.createElementNS(
-          "http://www.w3.org/2000/svg",
-          "polygon",
-        );
+    } else if (el.type === "Support") {
+      shape = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
       const p = projectPoint(el.points[0]);
-      const sx = cx + (p.x || 0) * zoom;
-      const sy = cy + (p.y || 0) * zoom;
-        shape.setAttribute(
-          "points",
-          `${sx - 6 * zoom},${sy + 10 * zoom} ${sx + 6 * zoom},${sy + 10 * zoom} ${sx},${sy}`,
-        );
-        shape.setAttribute("fill", "green");
+      const sx = cx + (p.x || 0) * globalThis.zoom;
+      const sy = cy + (p.y || 0) * globalThis.zoom;
+      shape.setAttribute(
+        "points",
+        `${sx - 6 * globalThis.zoom},${sy + 10 * globalThis.zoom} ${sx + 6 * globalThis.zoom},${sy + 10 * globalThis.zoom} ${sx},${sy}`,
+      );
+      shape.setAttribute("fill", "green");
     }
     if (shape) g.appendChild(shape);
     if (el.id === selectedId) g.setAttribute("stroke", "orange");
@@ -1176,7 +1302,7 @@ async function render(updateProps = true) {
   renderCalculationResults();
 
   // Only update properties if explicitly requested and not during continuous operations
-  if (updateProps && !isRotating && !isPanning) {
+  if (updateProps && !globalThis.isRotating && !globalThis.isPanning) {
     // Use debounced property update for operations that might have micro-stops
     schedulePropertyUpdate();
   }
@@ -1186,7 +1312,10 @@ async function render(updateProps = true) {
 
 async function addElement(type) {
   const id = generateId();
-  const center = unprojectDelta(-panX / zoom, -panY / zoom);
+  const center = unprojectDelta(
+    -globalThis.panX / globalThis.zoom,
+    -globalThis.panY / globalThis.zoom,
+  );
   const base = {
     id,
     type,
@@ -1199,10 +1328,10 @@ async function addElement(type) {
     const endX = base.x + (dir.x || 0);
     const endY = base.y + (dir.y || 0);
     const endZ = base.z + (dir.z || 0);
-    
+
     base.points = [
       { x: base.x, y: base.y, z: base.z },
-      { x: endX, y: endY, z: endZ }
+      { x: endX, y: endY, z: endZ },
     ];
     base.E = 200e9;
     base.A = 0.01;
@@ -1211,7 +1340,7 @@ async function addElement(type) {
     // Create plane with 4 corner points
     const l = 40 / 2; // half length
     const w = 40 / 2; // half width
-    
+
     // Determine normal direction based on current rotation
     // Find the axis that's most aligned with the view direction
     const matrix = getRotationMatrix();
@@ -1219,7 +1348,7 @@ async function addElement(type) {
     const absX = Math.abs(viewDir[0]);
     const absY = Math.abs(viewDir[1]);
     const absZ = Math.abs(viewDir[2]);
-    
+
     let normal;
     if (absX >= absY && absX >= absZ) {
       normal = "X";
@@ -1228,7 +1357,7 @@ async function addElement(type) {
     } else {
       normal = "Z";
     }
-    
+
     // Generate corner points based on normal direction
     let points;
     if (normal === "X") {
@@ -1245,7 +1374,8 @@ async function addElement(type) {
         { x: base.x + l, y: base.y, z: base.z + w },
         { x: base.x - l, y: base.y, z: base.z + w },
       ];
-    } else { // Z normal
+    } else {
+      // Z normal
       points = [
         { x: base.x - l, y: base.y - w, z: base.z },
         { x: base.x + l, y: base.y - w, z: base.z },
@@ -1253,15 +1383,15 @@ async function addElement(type) {
         { x: base.x - l, y: base.y + w, z: base.z },
       ];
     }
-    
+
     base.points = points;
     base.normal = normal;
   } else if (type === "Solid") {
     // Create solid with 8 corner points - orthogonal to standard axes
     const w = 30 / 2; // half width
-    const h = 30 / 2; // half height  
+    const h = 30 / 2; // half height
     const d = 30 / 2; // half depth
-    
+
     base.points = [
       { x: base.x - w, y: base.y - h, z: base.z - d }, // 0: bottom-back-left
       { x: base.x + w, y: base.y - h, z: base.z - d }, // 1: bottom-back-right
@@ -1277,16 +1407,14 @@ async function addElement(type) {
     const endX = base.x + (dir.x || 0);
     const endY = base.y + (dir.y || 0);
     const endZ = base.z + (dir.z || 0);
-    
+
     base.points = [
       { x: base.x, y: base.y, z: base.z },
-      { x: endX, y: endY, z: endZ }
+      { x: endX, y: endY, z: endZ },
     ];
     base.amount = 20;
   } else if (type === "Support") {
-    base.points = [
-      { x: base.x, y: base.y, z: base.z }
-    ];
+    base.points = [{ x: base.x, y: base.y, z: base.z }];
     base.ux = true;
     base.uy = true;
     base.rz = true;
@@ -1334,33 +1462,37 @@ function startDrag(ev) {
   if (el.type === "Member" || el.type === "Cable") {
     const p1 = screenCoords(el.points[0]);
     const p2 = screenCoords(el.points[1]);
-    if (distanceScreen({ x: mx, y: my }, p1) < 8) dragMode = "start";
-    else if (distanceScreen({ x: mx, y: my }, p2) < 8) dragMode = "end";
+    if (distanceScreen({ x: mx, y: my }, p1) < 16) dragMode = "start";
+    else if (distanceScreen({ x: mx, y: my }, p2) < 16) dragMode = "end";
     else if (distanceToSegment2D({ x: mx, y: my }, p1, p2) < 6)
       dragMode = "body";
   } else if (el.type === "Load") {
     const p1 = screenCoords(el.points[0]);
     const p2 = screenCoords(el.points[1]);
-    if (distanceScreen({ x: mx, y: my }, p1) < 8) dragMode = "start";
-    else if (distanceScreen({ x: mx, y: my }, p2) < 8) dragMode = "end";
+    if (distanceScreen({ x: mx, y: my }, p1) < 16) dragMode = "start";
+    else if (distanceScreen({ x: mx, y: my }, p2) < 16) dragMode = "end";
     else if (distanceToSegment2D({ x: mx, y: my }, p1, p2) < 6)
       dragMode = "body";
   } else if (el.type === "Plane" || el.type === "Solid") {
     // Check for edge/face dragging instead of individual points
     if (el.type === "Plane") {
       // For planes, check for edge dragging
-      const pts = (el.points || []).map(p => screenCoords(p));
+      const pts = (el.points || []).map((p) => screenCoords(p));
       if (pts.length >= 4) {
         const edges = [
           [pts[0], pts[1]], // edge 0-1
           [pts[1], pts[2]], // edge 1-2
           [pts[2], pts[3]], // edge 2-3
-          [pts[3], pts[0]]  // edge 3-0
+          [pts[3], pts[0]], // edge 3-0
         ];
-        
+
         for (let i = 0; i < edges.length; i++) {
           const edge = edges[i];
-          const distance = distanceToSegment2D({ x: mx, y: my }, edge[0], edge[1]);
+          const distance = distanceToSegment2D(
+            { x: mx, y: my },
+            edge[0],
+            edge[1],
+          );
           if (distance < 8) {
             dragMode = `edge-${i}`;
             break;
@@ -1370,8 +1502,8 @@ function startDrag(ev) {
     } else if (el.type === "Solid") {
       // For solids, check for face dragging
       const vertices = solidVertices(el);
-      const screen_vertices = vertices.map(p => screenCoords(p));
-      
+      const screen_vertices = vertices.map((p) => screenCoords(p));
+
       // Define the 6 faces of the cube
       const faces = [
         [0, 1, 2, 3], // bottom face
@@ -1379,13 +1511,13 @@ function startDrag(ev) {
         [0, 1, 5, 4], // front face
         [2, 3, 7, 6], // back face
         [0, 3, 7, 4], // left face
-        [1, 2, 6, 5]  // right face
+        [1, 2, 6, 5], // right face
       ];
-      
+
       for (let i = 0; i < faces.length; i++) {
         const face = faces[i];
-        const facePoints = face.map(j => screen_vertices[j]);
-        
+        const facePoints = face.map((j) => screen_vertices[j]);
+
         // Check if mouse is inside the face polygon
         if (isPointInPolygon({ x: mx, y: my }, facePoints)) {
           dragMode = `face-${i}`;
@@ -1393,19 +1525,21 @@ function startDrag(ev) {
         }
       }
     }
-    
+
     // If no edge/face was clicked, allow body drag
     if (dragMode === "body") {
       // Check for edge dragging for legacy dimension-based elements
       if (!el.points) {
-        const rect = el.type === "Plane" ? planeScreenRect(el) : solidScreenRect(el);
+    const rect =
+      el.type === "Plane" ? planeScreenRect(el) : solidScreenRect(el);
         const edgeThreshold = 8;
-        
+
         // Check if mouse is near edges for resizing
         if (Math.abs(mx - rect.left) < edgeThreshold) dragMode = "left";
         else if (Math.abs(mx - rect.right) < edgeThreshold) dragMode = "right";
         else if (Math.abs(my - rect.top) < edgeThreshold) dragMode = "top";
-        else if (Math.abs(my - rect.bottom) < edgeThreshold) dragMode = "bottom";
+        else if (Math.abs(my - rect.bottom) < edgeThreshold)
+      dragMode = "bottom";
       }
     }
   } else {
@@ -1420,8 +1554,8 @@ async function onDrag(ev) {
   if (dragId === null) return;
   const el = elements.find((e) => e.id === dragId);
   if (!el) return;
-  const dx = (ev.clientX - dragStartX) / zoom;
-  const dy = (ev.clientY - dragStartY) / zoom;
+  const dx = (ev.clientX - dragStartX) / globalThis.zoom;
+  const dy = (ev.clientY - dragStartY) / globalThis.zoom;
   const delta = unprojectDelta(dx, dy);
   if (el.type === "Member" || el.type === "Cable") {
     if (dragMode === "start") {
@@ -1468,19 +1602,23 @@ async function onDrag(ev) {
           [0, 1], // edge 0-1
           [1, 2], // edge 1-2
           [2, 3], // edge 2-3
-          [3, 0]  // edge 3-0
+          [3, 0], // edge 3-0
         ];
-        
+
         if (edgeIndex < edges.length) {
           const [p1Index, p2Index] = edges[edgeIndex];
           const p1 = el.points[p1Index];
           const p2 = el.points[p2Index];
           const orig_p1 = dragOrig.points[p1Index];
           const orig_p2 = dragOrig.points[p2Index];
-          
+
           // Apply orthogonal constraint
-          const constrainedDelta = constrainToOrthogonal(delta, edgeIndex, "Plane");
-          
+          const constrainedDelta = constrainToOrthogonal(
+            delta,
+            edgeIndex,
+            "Plane",
+          );
+
           // Move both points of the edge
           p1.x = orig_p1.x + (constrainedDelta.x || 0);
           p1.y = orig_p1.y + (constrainedDelta.y || 0);
@@ -1534,17 +1672,21 @@ async function onDrag(ev) {
           [0, 1, 5, 4], // front face
           [2, 3, 7, 6], // back face
           [0, 3, 7, 4], // left face
-          [1, 2, 6, 5]  // right face
+          [1, 2, 6, 5], // right face
         ];
-        
+
         if (faceIndex < faces.length) {
           const facePoints = faces[faceIndex];
-          
+
           // Apply orthogonal constraint
-          const constrainedDelta = constrainToOrthogonal(delta, faceIndex, "Solid");
-          
+          const constrainedDelta = constrainToOrthogonal(
+            delta,
+            faceIndex,
+            "Solid",
+          );
+
           // Move all points of the face
-          facePoints.forEach(pointIndex => {
+          facePoints.forEach((pointIndex) => {
             const p = el.points[pointIndex];
             const orig_p = dragOrig.points[pointIndex];
             p.x = orig_p.x + (constrainedDelta.x || 0);
@@ -1600,7 +1742,8 @@ async function onDrag(ev) {
     p.x = orig_p.x + (delta.x || 0);
     p.y = orig_p.y + (delta.y || 0);
     p.z = orig_p.z + (delta.z || 0);
-  } else if (el.points) { // body drag for point-based elements
+  } else if (el.points) {
+    // body drag for point-based elements
     el.points.forEach((p, i) => {
       const orig_p = dragOrig.points[i];
       p.x = orig_p.x + (delta.x || 0);
@@ -1629,19 +1772,19 @@ async function endDrag() {
 }
 
 async function zoomIn() {
-  zoom *= 1.25;
+  globalThis.zoom *= 1.25;
   await render(true); // Use debounced property update
 }
 
 async function zoomOut() {
-  zoom /= 1.25;
+  globalThis.zoom /= 1.25;
   await render(true); // Use debounced property update
 }
 
 async function resetPanZoom() {
-  zoom = 1;
-  panX = 0;
-  panY = 0;
+  globalThis.zoom = 1;
+  globalThis.panX = 0;
+  globalThis.panY = 0;
   setCurrentView("+Z"); // This will set rotationX = 0, rotationY = 0, rotationZ = 0
   await render(true); // Immediate property update for discrete reset operation
 }
@@ -1652,24 +1795,24 @@ function startPan(ev) {
     startRotation(ev);
     return;
   }
-  
-  isPanning = true;
-  panStartX = ev.clientX;
-  panStartY = ev.clientY;
-  panOrigX = panX;
-  panOrigY = panY;
+
+  globalThis.isPanning = true;
+  globalThis.panStartX = ev.clientX;
+  globalThis.panStartY = ev.clientY;
+  globalThis.panOrigX = globalThis.panX;
+  globalThis.panOrigY = globalThis.panY;
   document.addEventListener("mousemove", onPan);
   document.addEventListener("mouseup", endPan);
 }
 
 async function onPan(ev) {
-  panX = panOrigX + (ev.clientX - panStartX);
-  panY = panOrigY + (ev.clientY - panStartY);
+  globalThis.panX = globalThis.panOrigX + (ev.clientX - globalThis.panStartX);
+  globalThis.panY = globalThis.panOrigY + (ev.clientY - globalThis.panStartY);
   await render(false);
 }
 
 function endPan() {
-  isPanning = false;
+  globalThis.isPanning = false;
   document.removeEventListener("mousemove", onPan);
   document.removeEventListener("mouseup", endPan);
 }
@@ -1678,7 +1821,7 @@ async function onCanvasWheel(ev) {
   if (!ev.shiftKey) return;
   ev.preventDefault();
   const factor = Math.exp(-ev.deltaY / 200);
-  zoom *= factor;
+  globalThis.zoom *= factor;
   await render(true); // Use debounced property update
 }
 
@@ -1717,7 +1860,7 @@ async function loadState() {
           // Legacy format - convert to points
           obj.points = [
             { x: e.x, y: e.y, z: e.z },
-            { x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z }
+            { x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z },
           ];
           obj.E = e.E ?? 200e9;
           obj.A = e.A ?? 0.01;
@@ -1753,9 +1896,11 @@ async function loadState() {
           // Legacy format - convert to points
           obj.points = [
             { x: e.x, y: e.y, z: e.z },
-            { x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z }
+            { x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z },
           ];
-          obj.amount = e.amount ?? Math.hypot(obj.x2 - obj.x, obj.y2 - obj.y, obj.z2 - obj.z);
+        obj.amount =
+            e.amount ??
+            Math.hypot(obj.x2 - obj.x, obj.y2 - obj.y, obj.z2 - obj.z);
         }
       } else if (obj.type === "Support") {
         if (e.points) {
@@ -1766,9 +1911,7 @@ async function loadState() {
           obj.rz = e.rz !== false;
         } else {
           // Legacy format - convert to points
-          obj.points = [
-            { x: e.x, y: e.y, z: e.z }
-          ];
+          obj.points = [{ x: e.x, y: e.y, z: e.z }];
         obj.ux = e.ux !== false;
         obj.uy = e.uy !== false;
         obj.rz = e.rz !== false;
@@ -1778,16 +1921,16 @@ async function loadState() {
     });
     let maxId = elements.reduce((m, e) => Math.max(m, e.id), 0);
     nextId = Math.max(Date.now(), maxId + 1);
-    
+
     // Clear calculation results when loading a new sheet
     lastCalculationResults = null;
-    
+
     // Clear any pending debounced updates and render immediately
     if (propertyUpdateTimeout) {
       clearTimeout(propertyUpdateTimeout);
       propertyUpdateTimeout = null;
     }
-    
+
     updateSheetHeader();
     await render(true);
   }
@@ -1797,7 +1940,9 @@ document.getElementById("add-btn").addEventListener("click", async () => {
   const type = document.getElementById("element-type").value;
   await addElement(type);
 });
-document.getElementById("delete-btn").addEventListener("click", async () => { await deleteElement(); });
+document.getElementById("delete-btn").addEventListener("click", async () => {
+  await deleteElement();
+});
 document.getElementById("canvas").addEventListener("click", async () => {
   selectedId = null;
   // Clear any pending debounced updates and render immediately
@@ -1913,9 +2058,9 @@ function buildModel() {
         return {
           start: getPointId(e.points[0].x, e.points[0].y, e.points[0].z),
           end: getPointId(e.points[1].x, e.points[1].y, e.points[1].z),
-          E: e.E ?? 200e9,
-          A: e.A ?? 0.01,
-          I: e.I ?? 1e-6,
+      E: e.E ?? 200e9,
+      A: e.A ?? 0.01,
+      I: e.I ?? 1e-6,
         };
       }
     });
@@ -1928,14 +2073,14 @@ function buildModel() {
         const dy = e.points[1].y - e.points[0].y;
         const dz = e.points[1].z - e.points[0].z;
         const len = Math.hypot(dx, dy, dz) || 1;
-        const amt = e.amount ?? 0;
-        return {
+      const amt = e.amount ?? 0;
+      return {
           point: getPointId(e.points[0].x, e.points[0].y, e.points[0].z),
-          fx: (amt * dx) / len,
-          fy: (amt * dy) / len,
-          mz: 0,
-          amount: amt,
-        };
+        fx: (amt * dx) / len,
+        fy: (amt * dy) / len,
+        mz: 0,
+        amount: amt,
+      };
       }
     });
 
@@ -1945,9 +2090,9 @@ function buildModel() {
       if (e.points) {
         return {
           point: getPointId(e.points[0].x, e.points[0].y, e.points[0].z),
-          ux: e.ux !== false,
-          uy: e.uy !== false,
-          rz: e.rz !== false,
+      ux: e.ux !== false,
+      uy: e.uy !== false,
+      rz: e.rz !== false,
         };
       }
     });
@@ -1958,11 +2103,11 @@ function buildModel() {
 async function solveModel() {
   const payload = buildModel();
   console.log("Solving model:", payload);
-  
+
   // Add unit system to payload
   const unitSystem = globalProps.units || "metric";
   payload.unit_system = unitSystem;
-  
+
   const resp = await fetch("/solve", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1974,22 +2119,22 @@ async function solveModel() {
     return;
   }
   const data = await resp.json();
-  
+
   // Store results for visualization
   lastCalculationResults = {
     displacements: data.displacements || {},
     reactions: data.reactions || {},
     points: payload.points,
-    unit_system: data.unit_system
+    unit_system: data.unit_system,
   };
-  
+
   const lines = [];
-  
+
   // Header
   lines.push("STRUCTURAL ANALYSIS REPORT");
   lines.push("=".repeat(50));
   lines.push("");
-  
+
   // Model summary
   lines.push("MODEL SUMMARY:");
   lines.push(`  Total Points: ${payload.points.length}`);
@@ -1997,7 +2142,7 @@ async function solveModel() {
   lines.push(`  Total Loads: ${payload.loads.length}`);
   lines.push(`  Total Supports: ${payload.supports.length}`);
   lines.push("");
-  
+
   // Issues section
   if (data.issues && data.issues.length) {
     lines.push("ISSUES DETECTED:");
@@ -2006,7 +2151,7 @@ async function solveModel() {
     }
     lines.push("");
   }
-  
+
   // Displacements section
   lines.push("DISPLACEMENTS:");
   lines.push("-".repeat(20));
@@ -2015,9 +2160,11 @@ async function solveModel() {
     lines.push("  No displacement results available.");
   } else {
     for (const [pointId, dispData] of displacements) {
-      const point = payload.points.find(p => p.id === parseInt(pointId));
+      const point = payload.points.find((p) => p.id === parseInt(pointId));
       if (point) {
-        lines.push(`  Point ${pointId} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)}):`);
+    lines.push(
+          `  Point ${pointId} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)}):`,
+        );
         lines.push(`    Horizontal displacement (ux): ${dispData.ux}`);
         lines.push(`    Vertical displacement (uy): ${dispData.uy}`);
         lines.push(`    Rotation (rz): ${dispData.rz}`);
@@ -2025,7 +2172,7 @@ async function solveModel() {
       }
     }
   }
-  
+
   // Reactions section
   lines.push("REACTIONS:");
   lines.push("-".repeat(20));
@@ -2034,9 +2181,11 @@ async function solveModel() {
     lines.push("  No reaction results available.");
   } else {
     for (const [pointId, reactData] of reactions) {
-      const point = payload.points.find(p => p.id === parseInt(pointId));
+      const point = payload.points.find((p) => p.id === parseInt(pointId));
       if (point) {
-        lines.push(`  Point ${pointId} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)}):`);
+    lines.push(
+          `  Point ${pointId} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)}):`,
+        );
         lines.push(`    Horizontal force (fx): ${reactData.fx}`);
         lines.push(`    Vertical force (fy): ${reactData.fy}`);
         lines.push(`    Moment (mz): ${reactData.mz}`);
@@ -2044,7 +2193,7 @@ async function solveModel() {
       }
     }
   }
-  
+
   // Load summary
   lines.push("APPLIED LOADS:");
   lines.push("-".repeat(20));
@@ -2053,24 +2202,30 @@ async function solveModel() {
   } else {
     for (let i = 0; i < payload.loads.length; i++) {
       const load = payload.loads[i];
-      const point = payload.points.find(p => p.id === load.point);
+      const point = payload.points.find((p) => p.id === load.point);
       if (point) {
         const magnitude = Math.sqrt(load.fx * load.fx + load.fy * load.fy);
-        const angle = Math.atan2(load.fy, load.fx) * 180 / Math.PI;
+        const angle = (Math.atan2(load.fy, load.fx) * 180) / Math.PI;
         const unitSystem = data.unit_system || "metric";
         const forceUnit = unitSystem === "metric" ? "kN" : "kip";
-        const magnitudeFormatted = unitSystem === "metric" ? 
-          (magnitude / 1000).toFixed(6) : (magnitude / 4448.22).toFixed(6);
-        
-        lines.push(`  Load ${i + 1} at Point ${load.point} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}):`);
+        const magnitudeFormatted =
+          unitSystem === "metric"
+            ? (magnitude / 1000).toFixed(6)
+            : (magnitude / 4448.22).toFixed(6);
+
+        lines.push(
+          `  Load ${i + 1} at Point ${load.point} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}):`,
+        );
         lines.push(`    Magnitude: ${magnitudeFormatted} ${forceUnit}`);
         lines.push(`    Direction: ${angle.toFixed(2)}° from horizontal`);
-        lines.push(`    Components: fx = ${load.fx.toFixed(6)} N, fy = ${load.fy.toFixed(6)} N`);
+        lines.push(
+          `    Components: fx = ${load.fx.toFixed(6)} N, fy = ${load.fy.toFixed(6)} N`,
+        );
         lines.push("");
       }
     }
   }
-  
+
   // Support summary
   lines.push("SUPPORT CONDITIONS:");
   lines.push("-".repeat(20));
@@ -2079,19 +2234,23 @@ async function solveModel() {
   } else {
     for (let i = 0; i < payload.supports.length; i++) {
       const support = payload.supports[i];
-      const point = payload.points.find(p => p.id === support.point);
+      const point = payload.points.find((p) => p.id === support.point);
       if (point) {
         const constraints = [];
         if (support.ux) constraints.push("ux");
         if (support.uy) constraints.push("uy");
         if (support.rz) constraints.push("rz");
-        lines.push(`  Support ${i + 1} at Point ${support.point} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}):`);
-        lines.push(`    Constraints: ${constraints.length > 0 ? constraints.join(", ") : "none"}`);
+        lines.push(
+          `  Support ${i + 1} at Point ${support.point} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}):`,
+        );
+        lines.push(
+          `    Constraints: ${constraints.length > 0 ? constraints.join(", ") : "none"}`,
+        );
         lines.push("");
       }
     }
   }
-  
+
   // Member summary
   lines.push("MEMBER PROPERTIES:");
   lines.push("-".repeat(20));
@@ -2100,39 +2259,51 @@ async function solveModel() {
   } else {
     for (let i = 0; i < payload.members.length; i++) {
       const member = payload.members[i];
-      const startPoint = payload.points.find(p => p.id === member.start);
-      const endPoint = payload.points.find(p => p.id === member.end);
+      const startPoint = payload.points.find((p) => p.id === member.start);
+      const endPoint = payload.points.find((p) => p.id === member.end);
       if (startPoint && endPoint) {
         const length = Math.sqrt(
-          Math.pow(endPoint.x - startPoint.x, 2) + 
-          Math.pow(endPoint.y - startPoint.y, 2)
+          Math.pow(endPoint.x - startPoint.x, 2) +
+            Math.pow(endPoint.y - startPoint.y, 2),
         );
         const unitSystem = data.unit_system || "metric";
         const lengthUnit = unitSystem === "metric" ? "mm" : "in";
-        const lengthFormatted = unitSystem === "metric" ? 
-          (length * 1000).toFixed(6) : (length * 39.3701).toFixed(6);
+        const lengthFormatted =
+          unitSystem === "metric"
+            ? (length * 1000).toFixed(6)
+            : (length * 39.3701).toFixed(6);
         const stressUnit = unitSystem === "metric" ? "GPa" : "ksi";
-        const EFormatted = unitSystem === "metric" ? 
-          (member.E / 1e9).toFixed(3) : (member.E / 6894760.0).toFixed(3);
+        const EFormatted =
+          unitSystem === "metric"
+            ? (member.E / 1e9).toFixed(3)
+            : (member.E / 6894760.0).toFixed(3);
         const areaUnit = unitSystem === "metric" ? "mm²" : "in²";
-        const AFormatted = unitSystem === "metric" ? 
-          (member.A * 1e6).toFixed(3) : (member.A * 1550.0031).toFixed(3);
+        const AFormatted =
+          unitSystem === "metric"
+            ? (member.A * 1e6).toFixed(3)
+            : (member.A * 1550.0031).toFixed(3);
         const inertiaUnit = unitSystem === "metric" ? "mm⁴" : "in⁴";
-        const IFormatted = unitSystem === "metric" ? 
-          (member.I * 1e12).toFixed(3) : (member.I * 2.4025e9).toFixed(3);
-        
-        lines.push(`  Member ${i + 1} (Points ${member.start} → ${member.end}):`);
+        const IFormatted =
+          unitSystem === "metric"
+            ? (member.I * 1e12).toFixed(3)
+            : (member.I * 2.4025e9).toFixed(3);
+
+        lines.push(
+          `  Member ${i + 1} (Points ${member.start} → ${member.end}):`,
+        );
         lines.push(`    Length: ${lengthFormatted} ${lengthUnit}`);
         lines.push(`    Young's Modulus (E): ${EFormatted} ${stressUnit}`);
         lines.push(`    Cross-sectional Area (A): ${AFormatted} ${areaUnit}`);
-        lines.push(`    Second Moment of Inertia (I): ${IFormatted} ${inertiaUnit}`);
+        lines.push(
+          `    Second Moment of Inertia (I): ${IFormatted} ${inertiaUnit}`,
+        );
         lines.push("");
       }
     }
   }
-  
+
   out.textContent = lines.join("\n");
-  
+
   // Re-render to show calculation results
   render(false);
 }
@@ -2143,13 +2314,21 @@ document.getElementById("solve-btn").addEventListener("click", solveModel);
 let lastCalculationResults = null;
 
 // Unified function to render force vectors with consistent scaling
-function renderForceVector(group, startX, startY, endX, endY, color, opacity = 1.0) {
+function renderForceVector(
+  group,
+  startX,
+  startY,
+  endX,
+  endY,
+  color,
+  opacity = 1.0,
+) {
   const dx = endX - startX;
   const dy = endY - startY;
   const magnitude = Math.hypot(dx, dy);
-  
+
   if (magnitude < 1) return; // Skip very small vectors
-  
+
   // Draw the vector line
   const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
   line.setAttribute("x1", startX);
@@ -2160,20 +2339,23 @@ function renderForceVector(group, startX, startY, endX, endY, color, opacity = 1
   line.setAttribute("stroke-width", 2);
   line.setAttribute("opacity", opacity);
   group.appendChild(line);
-  
+
   // Draw the arrow
   const len = magnitude || 1;
   const nx = -dy / len;
   const ny = dx / len;
-  const arrowSize = 6 * zoom;
+  const arrowSize = 6 * globalThis.zoom;
   const b1x = endX + nx * arrowSize;
   const b1y = endY + ny * arrowSize;
   const b2x = endX - nx * arrowSize;
   const b2y = endY - ny * arrowSize;
   const tx = endX + (dx / len) * arrowSize * 1.5;
   const ty = endY + (dy / len) * arrowSize * 1.5;
-  
-  const arrow = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+
+  const arrow = document.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "polygon",
+  );
   arrow.setAttribute("points", `${b1x},${b1y} ${b2x},${b2y} ${tx},${ty}`);
   arrow.setAttribute("fill", color);
   arrow.setAttribute("opacity", opacity);
@@ -2183,35 +2365,39 @@ function renderForceVector(group, startX, startY, endX, endY, color, opacity = 1
 // Function to render calculation results on the plot
 function renderCalculationResults() {
   if (!lastCalculationResults) return;
-  
+
   const svg = document.getElementById("canvas");
-  const rect = svg.getBoundingClientRect();
-  const cx = rect.width / 2 + panX;
-  const cy = rect.height / 2 + panY;
-  
+
   const { displacements, reactions, points } = lastCalculationResults;
-  
+
   // Create a group for calculation results
-  const resultsGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  const resultsGroup = document.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "g",
+  );
   resultsGroup.setAttribute("class", "calculation-results");
   svg.appendChild(resultsGroup);
-  
+
   // Render reaction force vectors
   Object.entries(reactions || {}).forEach(([pointId, v]) => {
-    const point = points.find(p => p.id === parseInt(pointId));
+    const point = points.find((p) => p.id === parseInt(pointId));
     if (!point) return;
-    
+
     let fx, fy, mz;
-    
+
     // Handle different response formats
-    if (v && typeof v === 'object') {
+    if (v && typeof v === "object") {
       if (Array.isArray(v)) {
         // Direct array format
         [fx, fy, mz] = v;
       } else if (v.raw && Array.isArray(v.raw)) {
         // New format with raw values
         [fx, fy, mz] = v.raw;
-      } else if (v.fx !== undefined && v.fy !== undefined && v.mz !== undefined) {
+      } else if (
+        v.fx !== undefined &&
+        v.fy !== undefined &&
+        v.mz !== undefined
+      ) {
         // Object format with fx, fy, mz properties
         fx = v.fx;
         fy = v.fy;
@@ -2224,10 +2410,10 @@ function renderCalculationResults() {
       // Skip if not an object
       return;
     }
-    
+
     const magnitude = Math.sqrt(fx * fx + fy * fy);
     if (magnitude < 1e-6) return; // Skip very small reactions
-    
+
     // Define the vector in 3D world space
     const world_scale = 0.001 * 20; // Scale for visualization (was 0.001 * 0.1)
     const start_3d = { x: point.x, y: point.y, z: point.z };
@@ -2236,11 +2422,11 @@ function renderCalculationResults() {
       y: point.y + fy * world_scale,
       z: point.z, // fz is 0 in 2D analysis
     };
-    
+
     // Project both points to screen space. `screenCoords` handles zoom/pan.
     const start_screen = screenCoords(start_3d);
     const end_screen = screenCoords(end_3d);
-    
+
     // Draw reaction vector
     renderForceVector(
       resultsGroup,
@@ -2261,7 +2447,7 @@ function solidVertices(el) {
   if (el.points) {
     return el.points;
   }
-  
+
   // Legacy: if not point-based, calculate from dimensions
   const w = (el.width ?? 30) / 2;
   const h = (el.height ?? 30) / 2;
@@ -2282,19 +2468,19 @@ function constrainToOrthogonal(delta, faceIndex, elementType) {
   // For planes: constrain edge movements to be orthogonal
   // For solids: constrain face movements to be orthogonal
   const constrained = { x: 0, y: 0, z: 0 };
-  
+
   if (elementType === "Plane") {
     // Plane edges: constrain to the two axes that define the edge
     const edgeAxes = [
       ["y", "z"], // edge 0-1: Y-Z plane
-      ["x", "z"], // edge 1-2: X-Z plane  
+      ["x", "z"], // edge 1-2: X-Z plane
       ["y", "z"], // edge 2-3: Y-Z plane
-      ["x", "z"]  // edge 3-0: X-Z plane
+      ["x", "z"], // edge 3-0: X-Z plane
     ];
-    
+
     if (faceIndex < edgeAxes.length) {
       const axes = edgeAxes[faceIndex];
-      axes.forEach(axis => {
+      axes.forEach((axis) => {
         constrained[axis] = delta[axis] || 0;
       });
     }
@@ -2306,15 +2492,15 @@ function constrainToOrthogonal(delta, faceIndex, elementType) {
       "y", // front face: move in Y direction
       "y", // back face: move in Y direction
       "x", // left face: move in X direction
-      "x"  // right face: move in X direction
+      "x", // right face: move in X direction
     ];
-    
+
     if (faceIndex < faceAxes.length) {
       const axis = faceAxes[faceIndex];
       constrained[axis] = delta[axis] || 0;
     }
   }
-  
+
   return constrained;
 }
 
