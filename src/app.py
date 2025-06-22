@@ -8,7 +8,14 @@ from flask_login import current_user
 
 from timber import Point, Load, Member, Model, Support, solve_with_diagnostics
 from timber.extensions import bcrypt, db, login_manager, migrate
-from timber.units import set_unit_system, get_unit_system, UnitSystem, get_unit_conversion_info, convert_to_display, convert_from_display, get_display_unit
+from timber.units import (
+    set_unit_system,
+    get_unit_system,
+    get_unit_conversion_info,
+    convert_to_display,
+    convert_from_display,
+    get_display_unit,
+)
 
 # -------------------------------------------------------------------
 # Module-level extensions are defined in timber.extensions
@@ -80,14 +87,19 @@ def create_app(config_object: object | str | None = None) -> Flask:
             return jsonify({"error": "JSON body required"}), 400
 
         data = request.get_json()
-        
+
         # Set unit system if provided
         unit_system = data.get("unit_system", "metric")
         if unit_system not in ["metric", "imperial"]:
-            return jsonify({"error": "Invalid unit_system. Must be 'metric' or 'imperial'"}), 400
-        
+            return (
+                jsonify(
+                    {"error": "Invalid unit_system. Must be 'metric' or 'imperial'"}
+                ),
+                400,
+            )
+
         set_unit_system(unit_system)
-        
+
         try:
             # Filter points: only include those referenced by members, supports, or as the application point of a load
             points_in = data.get("points", [])
@@ -116,7 +128,7 @@ def create_app(config_object: object | str | None = None) -> Flask:
             return jsonify({"error": f"Invalid payload: {exc}"}), 400
 
         res, issues = solve_with_diagnostics(model)
-        
+
         # Format results with units
         formatted_displacements = {}
         for point_id, disp in res.displacements.items():
@@ -124,18 +136,18 @@ def create_app(config_object: object | str | None = None) -> Flask:
                 "ux": res.format_displacement(point_id, "ux"),
                 "uy": res.format_displacement(point_id, "uy"),
                 "rz": res.format_displacement(point_id, "rz"),
-                "raw": list(disp)  # Keep raw values for compatibility
+                "raw": list(disp),  # Keep raw values for compatibility
             }
-        
+
         formatted_reactions = {}
         for point_id, react in res.reactions.items():
             formatted_reactions[str(point_id)] = {
                 "fx": res.format_reaction(point_id, "fx"),
                 "fy": res.format_reaction(point_id, "fy"),
                 "mz": res.format_reaction(point_id, "mz"),
-                "raw": list(react)  # Keep raw values for compatibility
+                "raw": list(react),  # Keep raw values for compatibility
             }
-        
+
         return jsonify(
             {
                 "displacements": formatted_displacements,
@@ -152,52 +164,57 @@ def create_app(config_object: object | str | None = None) -> Flask:
         unit_system = request.args.get("unit_system", "metric")
         if unit_system not in ["metric", "imperial"]:
             unit_system = "metric"
-        
+
         set_unit_system(unit_system)  # type: ignore
-        
-        return jsonify({
-            "unit_system": get_unit_system(),
-            "conversions": get_unit_conversion_info()
-        })
+
+        return jsonify(
+            {
+                "unit_system": get_unit_system(),
+                "conversions": get_unit_conversion_info(),
+            }
+        )
 
     @app.post("/units/convert")
     def convert_units():
         """Convert values between SI and display units."""
         if not request.is_json:
             return jsonify({"error": "JSON body required"}), 400
-        
+
         data = request.get_json()
         unit_system = data.get("unit_system", "metric")
         set_unit_system(unit_system)
-        
+
         conversions = []
         for item in data.get("values", []):
             unit_type = item.get("unit_type")
             value = item.get("value")
-            direction = item.get("direction", "to_display")  # "to_display" or "from_display"
-            
+            direction = item.get(
+                "direction", "to_display"
+            )  # "to_display" or "from_display"
+
             if unit_type and value is not None:
                 if direction == "to_display":
                     display_value, symbol = convert_to_display(value, unit_type)
-                    conversions.append({
-                        "unit_type": unit_type,
-                        "si_value": value,
-                        "display_value": display_value,
-                        "symbol": symbol
-                    })
+                    conversions.append(
+                        {
+                            "unit_type": unit_type,
+                            "si_value": value,
+                            "display_value": display_value,
+                            "symbol": symbol,
+                        }
+                    )
                 else:  # from_display
                     si_value = convert_from_display(value, unit_type)
-                    conversions.append({
-                        "unit_type": unit_type,
-                        "display_value": value,
-                        "si_value": si_value,
-                        "symbol": get_display_unit(unit_type)
-                    })
-        
-        return jsonify({
-            "unit_system": unit_system,
-            "conversions": conversions
-        })
+                    conversions.append(
+                        {
+                            "unit_type": unit_type,
+                            "display_value": value,
+                            "si_value": si_value,
+                            "symbol": get_display_unit(unit_type),
+                        }
+                    )
+
+        return jsonify({"unit_system": unit_system, "conversions": conversions})
 
     return app
 

@@ -3,12 +3,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Dict, Tuple
 import numpy as np
-from .units import get_unit_manager, format_length, format_force, format_moment, format_stress, format_area, format_moment_of_inertia
+from .units import (
+    get_unit_manager,
+    format_length,
+    format_force,
+    format_moment
+)
 
 
 @dataclass
 class Point:
     """A 3D point with unique ID."""
+
     id: int
     x: float
     y: float
@@ -20,7 +26,7 @@ class Member:
     """A prismatic beam element between two points."""
 
     start: int  # Point ID
-    end: int    # Point ID
+    end: int  # Point ID
     E: float = 200e9
     A: float = 0.01
     I: float = 1e-6
@@ -60,12 +66,12 @@ class Results:
     displacements: Dict[int, Tuple[float, float, float]]
     reactions: Dict[int, Tuple[float, float, float]]
     unit_system: str = "metric"
-    
+
     def format_displacement(self, point_id: int, component: str) -> str:
         """Format a displacement component with units."""
         if point_id not in self.displacements:
             return "N/A"
-        
+
         disp = self.displacements[point_id]
         if component == "ux":
             return format_length(disp[0])
@@ -75,12 +81,12 @@ class Results:
             return f"{disp[2]:.6f} rad"
         else:
             return "N/A"
-    
+
     def format_reaction(self, point_id: int, component: str) -> str:
         """Format a reaction component with units."""
         if point_id not in self.reactions:
             return "N/A"
-        
+
         react = self.reactions[point_id]
         if component == "fx":
             return format_force(react[0])
@@ -105,7 +111,14 @@ def _local_stiffness(E: float, A: float, I: float, L: float) -> np.ndarray:
                 -12 * E * I / L**3,
                 6 * E * I / L**2,
             ],
-            [0, 6 * E * I / L**2, 4 * E * I / L, 0, -6 * E * I / L**2, 2 * E * I / L],
+            [
+                0,
+                6 * E * I / L**2,
+                4 * E * I / L,
+                0,
+                -6 * E * I / L**2,
+                2 * E * I / L,
+            ],
             [-A * E / L, 0, 0, A * E / L, 0, 0],
             [
                 0,
@@ -115,7 +128,14 @@ def _local_stiffness(E: float, A: float, I: float, L: float) -> np.ndarray:
                 12 * E * I / L**3,
                 -6 * E * I / L**2,
             ],
-            [0, 6 * E * I / L**2, 2 * E * I / L, 0, -6 * E * I / L**2, 4 * E * I / L],
+            [
+                0,
+                6 * E * I / L**2,
+                2 * E * I / L,
+                0,
+                -6 * E * I / L**2,
+                4 * E * I / L,
+            ],
         ]
     )
     return k
@@ -162,14 +182,14 @@ def _assemble_matrices(
     for m in model.members:
         if m.start not in point_id_to_idx or m.end not in point_id_to_idx:
             continue
-            
+
         start_idx = point_id_to_idx[m.start]
         end_idx = point_id_to_idx[m.end]
-        
+
         # Get point coordinates
         start_point = model.points[start_idx]
         end_point = model.points[end_idx]
-        
+
         dx = end_point.x - start_point.x
         dy = end_point.y - start_point.y
         L = (dx**2 + dy**2) ** 0.5
@@ -234,7 +254,7 @@ def solve(model: Model) -> Results:
     reactions_vec = K_full @ d - F_ext
     displacements: Dict[int, Tuple[float, float, float]] = {}
     reactions: Dict[int, Tuple[float, float, float]] = {}
-    
+
     for i, point in enumerate(model.points):
         displacements[point.id] = (d[i * 3], d[i * 3 + 1], d[i * 3 + 2])
         reactions[point.id] = (
@@ -244,17 +264,23 @@ def solve(model: Model) -> Results:
         )
 
     unit_manager = get_unit_manager()
-    return Results(displacements=displacements, reactions=reactions, unit_system=unit_manager.system)
+    return Results(
+        displacements=displacements,
+        reactions=reactions,
+        unit_system=unit_manager.system,
+    )
 
 
 def solve_with_diagnostics(model: Model) -> tuple[Results, List[str]]:
     """Solve the model and return potential issues found."""
     K_full, F_ext, K, F = _assemble_matrices(model)
-    
+
     # Handle empty model case
     if K.size == 0:
-        return Results(displacements={}, reactions={}, unit_system=get_unit_manager().system), ["No elements defined."]
-    
+        return Results(
+            displacements={}, reactions={}, unit_system=get_unit_manager().system
+        ), ["No elements defined."]
+
     try:
         d = np.linalg.solve(K, F)
         singular = False
@@ -265,7 +291,7 @@ def solve_with_diagnostics(model: Model) -> tuple[Results, List[str]]:
     reactions_vec = K_full @ d - F_ext
     displacements: Dict[int, Tuple[float, float, float]] = {}
     reactions: Dict[int, Tuple[float, float, float]] = {}
-    
+
     for i, point in enumerate(model.points):
         displacements[point.id] = (d[i * 3], d[i * 3 + 1], d[i * 3 + 2])
         reactions[point.id] = (
@@ -275,7 +301,11 @@ def solve_with_diagnostics(model: Model) -> tuple[Results, List[str]]:
         )
 
     unit_manager = get_unit_manager()
-    res = Results(displacements=displacements, reactions=reactions, unit_system=unit_manager.system)
+    res = Results(
+        displacements=displacements,
+        reactions=reactions,
+        unit_system=unit_manager.system,
+    )
 
     issues: List[str] = []
     if singular or np.linalg.matrix_rank(K) < K.shape[0]:
@@ -289,13 +319,15 @@ def solve_with_diagnostics(model: Model) -> tuple[Results, List[str]]:
         issues.append("No supports defined.")
 
     for m in model.members:
-        if m.start not in [p.id for p in model.points] or m.end not in [p.id for p in model.points]:
-            issues.append(f"Member references non-existent point.")
+        if m.start not in [p.id for p in model.points] or m.end not in [
+            p.id for p in model.points
+        ]:
+            issues.append("Member references non-existent point.")
             continue
-            
+
         start_point = next(p for p in model.points if p.id == m.start)
         end_point = next(p for p in model.points if p.id == m.end)
-        
+
         dx = end_point.x - start_point.x
         dy = end_point.y - start_point.y
         if np.isclose(dx, 0) and np.isclose(dy, 0):

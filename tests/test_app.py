@@ -1,6 +1,5 @@
 import math
 import sys
-import pytest
 
 sys.path.append("src")
 
@@ -39,10 +38,27 @@ def test_solve_endpoint_returns_results():
         resp = client.post(
             "/solve",
             json={
-                "points": [{"id": p.id, "x": p.x, "y": p.y, "z": p.z} for p in model.points],
-                "members": [{"start": m.start, "end": m.end, "E": m.E, "A": m.A, "I": m.I} for m in model.members],
-                "loads": [{"point": l.point, "fx": l.fx, "fy": l.fy, "mz": l.mz, "amount": l.amount} for l in model.loads],
-                "supports": [{"point": s.point, "ux": s.ux, "uy": s.uy, "rz": s.rz} for s in model.supports],
+                "points": [
+                    {"id": p.id, "x": p.x, "y": p.y, "z": p.z} for p in model.points
+                ],
+                "members": [
+                    {"start": m.start, "end": m.end, "E": m.E, "A": m.A, "I": m.I}
+                    for m in model.members
+                ],
+                "loads": [
+                    {
+                        "point": l.point,
+                        "fx": l.fx,
+                        "fy": l.fy,
+                        "mz": l.mz,
+                        "amount": l.amount,
+                    }
+                    for l in model.loads
+                ],
+                "supports": [
+                    {"point": s.point, "ux": s.ux, "uy": s.uy, "rz": s.rz}
+                    for s in model.supports
+                ],
             },
         )
         assert resp.status_code == 200
@@ -110,7 +126,10 @@ def test_solve_endpoint_invalid_nested_payload():
         assert "displacements" in data
         assert "reactions" in data
         assert "issues" in data
-        assert any("No elements defined" in issue for issue in data["issues"]) or len(data["displacements"]) == 0
+        assert (
+            any("No elements defined" in issue for issue in data["issues"])
+            or len(data["displacements"]) == 0
+        )
 
 
 def _capture_render_context(monkeypatch):
@@ -197,7 +216,12 @@ def test_triangle_with_directional_load_no_false_instability():
         {"id": 1, "x": -24, "y": -52, "z": 0},
         {"id": 2, "x": 16, "y": -52, "z": 0},
         {"id": 3, "x": -2, "y": -4, "z": 0},
-        {"id": 4, "x": -2.752316309123405, "y": -40.74126402770759, "z": 0},  # direction only
+        {
+            "id": 4,
+            "x": -2.752316309123405,
+            "y": -40.74126402770759,
+            "z": 0,
+        },  # direction only
     ]
     triangle_members = [
         {"start": 1, "end": 2, "E": 200e9, "A": 0.01, "I": 1e-6},
@@ -205,7 +229,13 @@ def test_triangle_with_directional_load_no_false_instability():
         {"start": 3, "end": 2, "E": 200e9, "A": 0.01, "I": 1e-6},
     ]
     triangle_loads = [
-        {"point": 3, "fx": -20.47176838208708, "fy": -999.7904313901539, "mz": 0, "amount": 1000}
+        {
+            "point": 3,
+            "fx": -20.47176838208708,
+            "fy": -999.7904313901539,
+            "mz": 0,
+            "amount": 1000,
+        }
     ]
     triangle_supports = [
         {"point": 2, "ux": True, "uy": True, "rz": True},
