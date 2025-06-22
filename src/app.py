@@ -89,11 +89,28 @@ def create_app(config_object: object | str | None = None) -> Flask:
         set_unit_system(unit_system)
         
         try:
+            # Filter points: only include those referenced by members, supports, or as the application point of a load
+            points_in = data.get("points", [])
+            members_in = data.get("members", [])
+            loads_in = data.get("loads", [])
+            supports_in = data.get("supports", [])
+
+            referenced_ids = set()
+            for m in members_in:
+                referenced_ids.add(m["start"])
+                referenced_ids.add(m["end"])
+            for s in supports_in:
+                referenced_ids.add(s["point"])
+            for l in loads_in:
+                referenced_ids.add(l["point"])
+
+            filtered_points = [p for p in points_in if p["id"] in referenced_ids]
+
             model = Model(
-                points=[Point(**p) for p in data.get("points", [])],
-                members=[Member(**m) for m in data.get("members", [])],
-                loads=[Load(**l) for l in data.get("loads", [])],
-                supports=[Support(**s) for s in data.get("supports", [])],
+                points=[Point(**p) for p in filtered_points],
+                members=[Member(**m) for m in members_in],
+                loads=[Load(**l) for l in loads_in],
+                supports=[Support(**s) for s in supports_in],
             )
         except (TypeError, KeyError) as exc:
             return jsonify({"error": f"Invalid payload: {exc}"}), 400

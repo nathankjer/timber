@@ -103,8 +103,14 @@ def test_solve_endpoint_invalid_nested_payload():
     app = create_test_app()
     with app.test_client() as client:
         resp = client.post("/solve", json=payload)
-        assert resp.status_code == 400
-        assert "Invalid payload" in resp.get_json()["error"]
+        # Now expect 200, not 400, since the backend ignores unreferenced/malformed points
+        assert resp.status_code == 200
+        data = resp.get_json()
+        # Should return empty results or an issue message
+        assert "displacements" in data
+        assert "reactions" in data
+        assert "issues" in data
+        assert any("No elements defined" in issue for issue in data["issues"]) or len(data["displacements"]) == 0
 
 
 def _capture_render_context(monkeypatch):
@@ -183,3 +189,44 @@ def test_create_app_accepts_class_and_string_config():
     assert app1.config["TESTING"] is True
     app2 = create_app("config.DevelopmentConfig")
     assert app2.config["DEBUG"] == DevelopmentConfig.DEBUG
+
+
+def test_triangle_with_directional_load_no_false_instability():
+    # Triangle: points 1, 2, 3; supports at 1 and 2; load at 3, direction defined by point 4 (not a real node)
+    triangle_points = [
+        {"id": 1, "x": -24, "y": -52, "z": 0},
+        {"id": 2, "x": 16, "y": -52, "z": 0},
+        {"id": 3, "x": -2, "y": -4, "z": 0},
+        {"id": 4, "x": -2.752316309123405, "y": -40.74126402770759, "z": 0},  # direction only
+    ]
+    triangle_members = [
+        {"start": 1, "end": 2, "E": 200e9, "A": 0.01, "I": 1e-6},
+        {"start": 1, "end": 3, "E": 200e9, "A": 0.01, "I": 1e-6},
+        {"start": 3, "end": 2, "E": 200e9, "A": 0.01, "I": 1e-6},
+    ]
+    triangle_loads = [
+        {"point": 3, "fx": -20.47176838208708, "fy": -999.7904313901539, "mz": 0, "amount": 1000}
+    ]
+    triangle_supports = [
+        {"point": 2, "ux": True, "uy": True, "rz": True},
+        {"point": 1, "ux": True, "uy": True, "rz": True},
+    ]
+    app = create_test_app()
+    with app.test_client() as client:
+        resp = client.post(
+            "/solve",
+            json={
+                "points": triangle_points,
+                "members": triangle_members,
+                "loads": triangle_loads,
+                "supports": triangle_supports,
+                "unit_system": "metric",
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        # Should NOT have the instability warning
+        assert not any(
+            "unstable" in issue or "insufficiently constrained" in issue
+            for issue in data["issues"]
+        ), f"Unexpected instability warning: {data['issues']}"

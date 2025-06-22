@@ -199,7 +199,7 @@ async function deleteSheet(id) {
       sheets.push(data.new_sheet);
       sheetId = data.new_sheet.id;
     } else {
-      sheetId = sheets[0].id;
+    sheetId = sheets[0].id;
     }
     renderSheetList();
     loadState();
@@ -235,19 +235,19 @@ function projectPoint(p) {
   
   if (discreteViews.includes(currentView)) {
     // Use discrete orthographic projection
-    switch (currentView) {
-      case "+X":
-        return { x: p.y, y: -p.z };
-      case "-X":
-        return { x: -p.y, y: -p.z };
-      case "+Y":
-        return { x: p.x, y: -p.z };
-      case "-Y":
-        return { x: -p.x, y: -p.z };
-      case "+Z":
-        return { x: p.x, y: -p.y };
-      case "-Z":
-        return { x: -p.x, y: -p.y };
+  switch (currentView) {
+    case "+X":
+      return { x: p.y, y: -p.z };
+    case "-X":
+      return { x: -p.y, y: -p.z };
+    case "+Y":
+      return { x: p.x, y: -p.z };
+    case "-Y":
+      return { x: -p.x, y: -p.z };
+    case "+Z":
+      return { x: p.x, y: -p.y };
+    case "-Z":
+      return { x: -p.x, y: -p.y };
     }
   } else {
     // Use continuous rotation
@@ -264,19 +264,19 @@ function unprojectDelta(dx, dy) {
   
   if (discreteViews.includes(currentView)) {
     // Use discrete orthographic projection
-    switch (currentView) {
-      case "+X":
-        return { y: dx, z: -dy };
-      case "-X":
-        return { y: -dx, z: -dy };
-      case "+Y":
-        return { x: dx, z: -dy };
-      case "-Y":
-        return { x: -dx, z: -dy };
-      case "+Z":
-        return { x: dx, y: -dy };
-      case "-Z":
-        return { x: -dx, y: -dy };
+  switch (currentView) {
+    case "+X":
+      return { y: dx, z: -dy };
+    case "-X":
+      return { y: -dx, z: -dy };
+    case "+Y":
+      return { x: dx, z: -dy };
+    case "-Y":
+      return { x: -dx, z: -dy };
+    case "+Z":
+      return { x: dx, y: -dy };
+    case "-Z":
+      return { x: -dx, y: -dy };
     }
   } else {
     // Use continuous rotation - approximate for small deltas
@@ -514,16 +514,16 @@ function getSnapPoints(ignoreId) {
       if (e.type === "Support") {
         pts.push({ x: e.x, y: e.y, z: e.z, kind: "Support" });
       } else if (e.type === "Load") {
-        pts.push({ x: e.x, y: e.y, z: e.z, kind: "Load" });
-        pts.push({
-          x: e.x2 ?? e.x,
-          y: e.y2 ?? e.y,
-          z: e.z2 ?? e.z,
-          kind: "Load",
-        });
+      pts.push({ x: e.x, y: e.y, z: e.z, kind: "Load" });
+      pts.push({
+        x: e.x2 ?? e.x,
+        y: e.y2 ?? e.y,
+        z: e.z2 ?? e.z,
+        kind: "Load",
+      });
       } else if (e.type === "Member" || e.type === "Cable") {
-        pts.push({ x: e.x, y: e.y, z: e.z, kind: "End" });
-        pts.push({ x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z, kind: "End" });
+      pts.push({ x: e.x, y: e.y, z: e.z, kind: "End" });
+      pts.push({ x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z, kind: "End" });
         
         // Add midpoint of member/cable
         const midX = (e.x + (e.x2 ?? e.x)) / 2;
@@ -536,28 +536,28 @@ function getSnapPoints(ignoreId) {
         corners.forEach((c) => pts.push({ ...c, kind: "PlaneCorner" }));
       } else if (e.type === "Solid") {
         // Legacy dimension-based solid
-        const s = 15;
-        [-s, s].forEach((dx) =>
-          [-s, s].forEach((dy) =>
-            [-s, s].forEach((dz) =>
-              pts.push({
-                x: e.x + dx,
-                y: e.y + dy,
-                z: e.z + dz,
-                kind: "SolidCorner",
-              }),
-            ),
-          ),
-        );
-        [-s, s].forEach((dx) =>
-          pts.push({ x: e.x + dx, y: e.y, z: e.z, kind: "FaceCenter" }),
-        );
+      const s = 15;
+      [-s, s].forEach((dx) =>
         [-s, s].forEach((dy) =>
-          pts.push({ x: e.x, y: e.y + dy, z: e.z, kind: "FaceCenter" }),
-        );
-        [-s, s].forEach((dz) =>
-          pts.push({ x: e.x, y: e.y, z: e.z + dz, kind: "FaceCenter" }),
-        );
+          [-s, s].forEach((dz) =>
+            pts.push({
+              x: e.x + dx,
+              y: e.y + dy,
+              z: e.z + dz,
+              kind: "SolidCorner",
+            }),
+          ),
+        ),
+      );
+      [-s, s].forEach((dx) =>
+        pts.push({ x: e.x + dx, y: e.y, z: e.z, kind: "FaceCenter" }),
+      );
+      [-s, s].forEach((dy) =>
+        pts.push({ x: e.x, y: e.y + dy, z: e.z, kind: "FaceCenter" }),
+      );
+      [-s, s].forEach((dz) =>
+        pts.push({ x: e.x, y: e.y, z: e.z + dz, kind: "FaceCenter" }),
+      );
       }
     }
   });
@@ -578,11 +578,11 @@ function getSnapLines(ignoreId) {
       }
     } else {
       // Legacy fallback for any remaining elements
-      if (e.type === "Member" || e.type === "Cable" || e.type === "Load") {
-        lines.push({
-          p1: { x: e.x, y: e.y, z: e.z },
-          p2: { x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z },
-        });
+    if (e.type === "Member" || e.type === "Cable" || e.type === "Load") {
+      lines.push({
+        p1: { x: e.x, y: e.y, z: e.z },
+        p2: { x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z },
+      });
       }
     }
   });
@@ -671,31 +671,31 @@ function applySnapping(el) {
     // Legacy fallback for any remaining elements
     if (el.type === "Support") {
       snapObj(el);
-    } else if (el.type === "Load") {
-      const base = { x: el.x, y: el.y, z: el.z };
-      const tip = { x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z };
+  } else if (el.type === "Load") {
+    const base = { x: el.x, y: el.y, z: el.z };
+    const tip = { x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z };
       snapObj(base);
       snapObj(tip);
-      el.x = base.x;
-      el.y = base.y;
-      el.z = base.z;
-      el.x2 = tip.x;
-      el.y2 = tip.y;
-      el.z2 = tip.z;
-    } else if (el.type === "Member" || el.type === "Cable") {
-      const p1 = { x: el.x, y: el.y, z: el.z };
-      const p2 = { x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z };
+    el.x = base.x;
+    el.y = base.y;
+    el.z = base.z;
+    el.x2 = tip.x;
+    el.y2 = tip.y;
+    el.z2 = tip.z;
+  } else if (el.type === "Member" || el.type === "Cable") {
+    const p1 = { x: el.x, y: el.y, z: el.z };
+    const p2 = { x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z };
       snapObj(p1);
       snapObj(p2);
-      el.x = p1.x;
-      el.y = p1.y;
-      el.z = p1.z;
-      el.x2 = p2.x;
-      el.y2 = p2.y;
-      el.z2 = p2.z;
+    el.x = p1.x;
+    el.y = p1.y;
+    el.z = p1.z;
+    el.x2 = p2.x;
+    el.y2 = p2.y;
+    el.z2 = p2.z;
     } else if (el.type === "Plane" || el.type === "Solid") {
       snapObj(el);
-    } else {
+  } else {
       snapObj(el);
     }
   }
@@ -912,7 +912,7 @@ function renderProperties() {
         globalProps.g = 32.174; // ft/s²
       }
       // Re-render properties to update unit displays
-      renderProperties();
+    renderProperties();
     }
   });
 }
@@ -942,7 +942,7 @@ function render(updateProps = true) {
     const ry = (rotationY * 180 / Math.PI).toFixed(1);
     document.getElementById("current-view").textContent = `Rotated (X:${rx}°, Y:${ry}°)`;
   } else {
-    document.getElementById("current-view").textContent = currentView;
+  document.getElementById("current-view").textContent = currentView;
   }
 
   // First, render all points as dots
@@ -1056,20 +1056,20 @@ function render(updateProps = true) {
       arrow.setAttribute("points", `${b1x},${b1y} ${b2x},${b2y} ${tx},${ty}`);
       arrow.setAttribute("fill", "red");
       g.appendChild(arrow);
-    } else if (el.type === "Plane") {
+      } else if (el.type === "Plane") {
       // Always render planes - they should be visible in all views
       const pts = el.points.map((p) => {
-        const pr = projectPoint(p);
-        return [cx + (pr.x || 0) * zoom, cy + (pr.y || 0) * zoom];
-      });
-      shape = document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "polygon",
-      );
-      shape.setAttribute("points", pts.map((pt) => pt.join(",")).join(" "));
-      shape.setAttribute("fill", "rgba(0,0,255,0.2)");
-      shape.setAttribute("stroke", "blue");
-    } else if (el.type === "Solid") {
+          const pr = projectPoint(p);
+          return [cx + (pr.x || 0) * zoom, cy + (pr.y || 0) * zoom];
+        });
+        shape = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "polygon",
+        );
+        shape.setAttribute("points", pts.map((pt) => pt.join(",")).join(" "));
+        shape.setAttribute("fill", "rgba(0,0,255,0.2)");
+        shape.setAttribute("stroke", "blue");
+      } else if (el.type === "Solid") {
       const vertices = el.points;
       const screen_vertices = vertices.map(p => screenCoords(p));
       
@@ -1113,19 +1113,19 @@ function render(updateProps = true) {
         line.setAttribute("stroke-width", 1);
         g.appendChild(line);
       });
-    } else if (el.type === "Support") {
-      shape = document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "polygon",
-      );
+      } else if (el.type === "Support") {
+        shape = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "polygon",
+        );
       const p = projectPoint(el.points[0]);
       const sx = cx + (p.x || 0) * zoom;
       const sy = cy + (p.y || 0) * zoom;
-      shape.setAttribute(
-        "points",
-        `${sx - 6 * zoom},${sy + 10 * zoom} ${sx + 6 * zoom},${sy + 10 * zoom} ${sx},${sy}`,
-      );
-      shape.setAttribute("fill", "green");
+        shape.setAttribute(
+          "points",
+          `${sx - 6 * zoom},${sy + 10 * zoom} ${sx + 6 * zoom},${sy + 10 * zoom} ${sx},${sy}`,
+        );
+        shape.setAttribute("fill", "green");
     }
     if (shape) g.appendChild(shape);
     if (el.id === selectedId) g.setAttribute("stroke", "orange");
@@ -1432,27 +1432,27 @@ function onDrag(ev) {
       }
     } else {
       // Legacy dimension-based plane
-      const info = axisInfo(currentView);
-      const dh = dx;
-      const dv = dy;
-      const dhWorld = dh * info.h.sign;
-      const dvWorld = dv * info.v.sign;
-      if (dragMode === "left") {
-        el.length = Math.max(1, dragOrig.length - dh);
-        el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
-      } else if (dragMode === "right") {
-        el.length = Math.max(1, dragOrig.length + dh);
-        el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
-      } else if (dragMode === "top") {
-        el.width = Math.max(1, dragOrig.width - dv);
-        el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
-      } else if (dragMode === "bottom") {
-        el.width = Math.max(1, dragOrig.width + dv);
-        el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
-      } else {
-        ["x", "y", "z"].forEach((k) => {
-          if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k];
-        });
+    const info = axisInfo(currentView);
+    const dh = dx;
+    const dv = dy;
+    const dhWorld = dh * info.h.sign;
+    const dvWorld = dv * info.v.sign;
+    if (dragMode === "left") {
+      el.length = Math.max(1, dragOrig.length - dh);
+      el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
+    } else if (dragMode === "right") {
+      el.length = Math.max(1, dragOrig.length + dh);
+      el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
+    } else if (dragMode === "top") {
+      el.width = Math.max(1, dragOrig.width - dv);
+      el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
+    } else if (dragMode === "bottom") {
+      el.width = Math.max(1, dragOrig.width + dv);
+      el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
+    } else {
+      ["x", "y", "z"].forEach((k) => {
+        if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k];
+      });
       }
     }
   } else if (el.type === "Solid") {
@@ -1495,30 +1495,30 @@ function onDrag(ev) {
       }
     } else {
       // Legacy dimension-based solid
-      const info = axisInfo(currentView);
-      const dh = dx;
-      const dv = dy;
-      const dhWorld = dh * info.h.sign;
-      const dvWorld = dv * info.v.sign;
-      const hProp = axisDims[info.h.axis];
-      const vProp = axisDims[info.v.axis];
-      if (dragMode === "left") {
-        el[hProp] = Math.max(1, dragOrig[hProp] - dh);
-        el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
-      } else if (dragMode === "right") {
-        el[hProp] = Math.max(1, dragOrig[hProp] + dh);
-        el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
-      } else if (dragMode === "top") {
-        el[vProp] = Math.max(1, dragOrig[vProp] - dv);
-        el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
-      } else if (dragMode === "bottom") {
-        el[vProp] = Math.max(1, dragOrig[vProp] + dv);
-        el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
-      } else {
-        ["x", "y", "z"].forEach((k) => {
-          if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k];
-        });
-      }
+    const info = axisInfo(currentView);
+    const dh = dx;
+    const dv = dy;
+    const dhWorld = dh * info.h.sign;
+    const dvWorld = dv * info.v.sign;
+    const hProp = axisDims[info.h.axis];
+    const vProp = axisDims[info.v.axis];
+    if (dragMode === "left") {
+      el[hProp] = Math.max(1, dragOrig[hProp] - dh);
+      el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
+    } else if (dragMode === "right") {
+      el[hProp] = Math.max(1, dragOrig[hProp] + dh);
+      el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
+    } else if (dragMode === "top") {
+      el[vProp] = Math.max(1, dragOrig[vProp] - dv);
+      el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
+    } else if (dragMode === "bottom") {
+      el[vProp] = Math.max(1, dragOrig[vProp] + dv);
+      el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
+    } else {
+      ["x", "y", "z"].forEach((k) => {
+        if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k];
+      });
+    }
     }
   } else if (el.type === "Support") {
     // Support elements can be dragged by their position
@@ -1617,9 +1617,9 @@ async function loadState() {
         if (e.points) {
           // New point-based format
           obj.points = e.points;
-          obj.E = e.E ?? 200e9;
-          obj.A = e.A ?? 0.01;
-          obj.I = e.I ?? 1e-6;
+        obj.E = e.E ?? 200e9;
+        obj.A = e.A ?? 0.01;
+        obj.I = e.I ?? 1e-6;
         } else {
           // Legacy format - convert to points
           obj.points = [
@@ -1637,9 +1637,9 @@ async function loadState() {
           obj.normal = e.normal;
         } else {
           // Legacy dimension-based plane
-          obj.length = e.length ?? 40;
-          obj.width = e.width ?? 40;
-          obj.normal = e.normal ?? currentView[1];
+        obj.length = e.length ?? 40;
+        obj.width = e.width ?? 40;
+        obj.normal = e.normal ?? currentView[1];
         }
       } else if (obj.type === "Solid") {
         if (e.points) {
@@ -1647,9 +1647,9 @@ async function loadState() {
           obj.points = e.points;
         } else {
           // Legacy dimension-based solid
-          obj.width = e.width ?? 30;
-          obj.height = e.height ?? 30;
-          obj.depth = e.depth ?? 30;
+        obj.width = e.width ?? 30;
+        obj.height = e.height ?? 30;
+        obj.depth = e.depth ?? 30;
         }
       } else if (obj.type === "Load") {
         if (e.points) {
@@ -1676,9 +1676,9 @@ async function loadState() {
           obj.points = [
             { x: e.x, y: e.y, z: e.z }
           ];
-          obj.ux = e.ux !== false;
-          obj.uy = e.uy !== false;
-          obj.rz = e.rz !== false;
+        obj.ux = e.ux !== false;
+        obj.uy = e.uy !== false;
+        obj.rz = e.rz !== false;
         }
       }
       return obj;
@@ -1753,50 +1753,71 @@ document.querySelectorAll(".view-btn").forEach((btn) => {
 });
 
 function buildModel() {
-  // First, collect all unique points from all elements
-  const pointMap = new Map();
+  // Collect all referenced points (by id or coordinates)
+  const referenced = new Set();
+  // Map from coordinate string to point object
+  const coordToPointObj = new Map();
+  // Map from coordinate string to id
+  const coordToId = new Map();
   let nextPointId = 1;
-  
-  function getOrCreatePoint(x, y, z = 0) {
-    const key = `${x.toFixed(6)},${y.toFixed(6)},${z.toFixed(6)}`;
-    if (!pointMap.has(key)) {
-      pointMap.set(key, { id: nextPointId++, x, y, z });
-    }
-    return pointMap.get(key);
-  }
-  
-  // Collect points from all elements
+
+  // First, collect all points from all elements, but only mark as referenced if used by a member, support, or as the application point of a load
   elements.forEach((el) => {
-    if (el.points) {
-      // All elements now use points array
-      el.points.forEach(p => getOrCreatePoint(p.x, p.y, p.z));
-    } else {
-      // Legacy fallback for any remaining elements
-      if (el.type === "Support") {
-        getOrCreatePoint(el.x, el.y, el.z);
-      } else if (el.type === "Load") {
-        getOrCreatePoint(el.x, el.y, el.z);
-      } else if (el.type === "Member" || el.type === "Cable") {
-        getOrCreatePoint(el.x, el.y, el.z);
-        getOrCreatePoint(el.x2 ?? el.x, el.y2 ?? el.y, el.z2 ?? el.z);
-      } else if (el.type === "Plane" || el.type === "Solid") {
-        (el.points || []).forEach(p => getOrCreatePoint(p.x, p.y, p.z));
+    if (el.type === "Member" || el.type === "Cable") {
+      if (el.points) {
+        el.points.forEach((p) => {
+          const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
+          coordToPointObj.set(key, p);
+          referenced.add(key);
+        });
+      }
+    } else if (el.type === "Support") {
+      if (el.points) {
+        const p = el.points[0];
+        const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
+        coordToPointObj.set(key, p);
+        referenced.add(key);
+      }
+    } else if (el.type === "Load") {
+      if (el.points) {
+        // Only the first point is the application point
+        const p = el.points[0];
+        const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
+        coordToPointObj.set(key, p);
+        referenced.add(key);
+        // The second point is direction only, do not add to referenced
+        if (el.points[1]) {
+          const key2 = `${el.points[1].x.toFixed(6)},${el.points[1].y.toFixed(6)},${el.points[1].z.toFixed(6)}`;
+          coordToPointObj.set(key2, el.points[1]);
+        }
+      }
+    } else if (el.type === "Plane" || el.type === "Solid") {
+      if (el.points) {
+        el.points.forEach((p) => {
+          const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
+          coordToPointObj.set(key, p);
+        });
       }
     }
   });
-  
-  const points = Array.from(pointMap.values());
-  
-  // Create mapping from coordinates to point IDs
-  const coordToPointId = new Map();
-  points.forEach(point => {
-    const key = `${point.x.toFixed(6)},${point.y.toFixed(6)},${point.z.toFixed(6)}`;
-    coordToPointId.set(key, point.id);
+
+  // Assign ids only to referenced points
+  Array.from(referenced).forEach((key) => {
+    if (!coordToId.has(key)) {
+      coordToId.set(key, nextPointId++);
+    }
   });
-  
+
+  // Build points array for the model
+  const points = Array.from(referenced).map((key) => {
+    const p = coordToPointObj.get(key);
+    return { id: coordToId.get(key), x: p.x, y: p.y, z: p.z };
+  });
+
+  // Helper to get id for a coordinate
   function getPointId(x, y, z = 0) {
     const key = `${x.toFixed(6)},${y.toFixed(6)},${z.toFixed(6)}`;
-    return coordToPointId.get(key);
+    return coordToId.get(key);
   }
 
   const members = elements
@@ -1806,15 +1827,6 @@ function buildModel() {
         return {
           start: getPointId(e.points[0].x, e.points[0].y, e.points[0].z),
           end: getPointId(e.points[1].x, e.points[1].y, e.points[1].z),
-          E: e.E ?? 200e9,
-          A: e.A ?? 0.01,
-          I: e.I ?? 1e-6,
-        };
-      } else {
-        // Legacy fallback
-        return {
-          start: getPointId(e.x, e.y, e.z),
-          end: getPointId(e.x2 ?? e.x, e.y2 ?? e.y, e.z2 ?? e.z),
           E: e.E ?? 200e9,
           A: e.A ?? 0.01,
           I: e.I ?? 1e-6,
@@ -1838,20 +1850,6 @@ function buildModel() {
           mz: 0,
           amount: amt,
         };
-      } else {
-        // Legacy fallback
-        const dx = ((e.x2 ?? e.x) - e.x);
-        const dy = ((e.y2 ?? e.y) - e.y);
-        const dz = ((e.z2 ?? e.z) - e.z);
-        const len = Math.hypot(dx, dy, dz) || 1;
-        const amt = e.amount ?? 0;
-        return {
-          point: getPointId(e.x, e.y, e.z),
-          fx: (amt * dx) / len,
-          fy: (amt * dy) / len,
-          mz: 0,
-          amount: amt,
-        };
       }
     });
 
@@ -1861,14 +1859,6 @@ function buildModel() {
       if (e.points) {
         return {
           point: getPointId(e.points[0].x, e.points[0].y, e.points[0].z),
-          ux: e.ux !== false,
-          uy: e.uy !== false,
-          rz: e.rz !== false,
-        };
-      } else {
-        // Legacy fallback
-        return {
-          point: getPointId(e.x, e.y, e.z),
           ux: e.ux !== false,
           uy: e.uy !== false,
           rz: e.rz !== false,
