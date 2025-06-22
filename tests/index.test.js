@@ -118,11 +118,11 @@ describe("geometry helpers (pure maths)", () => {
 
   test("unprojectDelta mirrors projectPoint along +Z view", () => {
     setCurrentView("+Z");
-    const res = unprojectDelta(5, 0); // dx ⇒ +y , dy ⇒ -z
-    expect(res.y).toBeCloseTo(5);
+    const res = unprojectDelta(5, 0); // dx ⇒ +x , dy ⇒ -y
+    expect(res.x).toBeCloseTo(5);
     // JS distinguishes 0 and -0 when using Object.is, but for geometry any
     // sign‑zero is acceptable.  Use |value| < ε instead of strict equality.
-    expect(Math.abs(res.z)).toBeLessThan(1e-12);
+    expect(Math.abs(res.y)).toBeLessThan(1e-12);
   });
 
   test("screenCoords maps origin to canvas centre", () => {
@@ -180,8 +180,8 @@ describe("plane / solid helpers", () => {
     setCurrentView("+Z");
     const el = { x: 0, y: 0, z: 0, width: 20, height: 30, depth: 40 };
     const rect = solidScreenRect(el);
-    expect(rect.right - rect.left).toBeCloseTo(30 * global.zoom); // height along Y
-    expect(rect.bottom - rect.top).toBeCloseTo(40 * global.zoom); // depth along Z
+    expect(rect.right - rect.left).toBeCloseTo(20 * global.zoom); // width along X
+    expect(rect.bottom - rect.top).toBeCloseTo(30 * global.zoom); // height along Y
   });
 });
 
@@ -412,7 +412,7 @@ describe("zoom and keyboard controls", () => {
     zoomIn();
     resetPanZoom();
     const sc = screenCoords({ x: 0, y: 10, z: 0 }).x;
-    expect(sc).toBeCloseTo(410);
+    expect(sc).toBeCloseTo(400);
   });
 
   test("pressing Delete triggers deleteElement", () => {
@@ -428,16 +428,16 @@ describe("zoom and keyboard controls", () => {
   test("holding Shift and scrolling zooms", () => {
     resetPanZoom();
     const canvas = document.getElementById("canvas");
-    const before = screenCoords({ x: 0, y: 10, z: 0 }).x;
+    const before = screenCoords({ x: 10, y: 0, z: 0 }).x;
     canvas.dispatchEvent(
       new WheelEvent("wheel", { deltaY: -100, shiftKey: true, bubbles: true }),
     );
-    const mid = screenCoords({ x: 0, y: 10, z: 0 }).x;
-    expect(mid).toBeGreaterOrEqual(before);
+    const mid = screenCoords({ x: 10, y: 0, z: 0 }).x;
+    expect(mid).toBeGreaterThanOrEqual(before);
     canvas.dispatchEvent(
       new WheelEvent("wheel", { deltaY: 100, shiftKey: true, bubbles: true }),
     );
-    const after = screenCoords({ x: 0, y: 10, z: 0 }).x;
+    const after = screenCoords({ x: 10, y: 0, z: 0 }).x;
     expect(after).toBeLessThan(mid);
   });
 
