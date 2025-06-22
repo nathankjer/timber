@@ -284,7 +284,6 @@ function unprojectDelta(dx, dy) {
   }
 }
 const SNAP_PIXELS = 10;
-const LOAD_LENGTH_SCALE = 0.001;
 
 function screenCoords(p) {
   const svg = document.getElementById("canvas");
@@ -532,17 +531,6 @@ function addNumberInput(container, label, prop, el) {
   input.addEventListener("input", (ev) => {
     const v = parseFloat(ev.target.value);
     el[prop] = Number.isFinite(v) ? v : 0;
-    if (prop === "amount" && el.type === "Load") {
-      const dx = (el.x2 ?? el.x) - el.x;
-      const dy = (el.y2 ?? el.y) - el.y;
-      const dz = (el.z2 ?? el.z) - el.z;
-      const len = Math.hypot(dx, dy, dz) || 1;
-      const newLen = el.amount * LOAD_LENGTH_SCALE;
-      const scale = newLen / len;
-      el.x2 = el.x + dx * scale;
-      el.y2 = el.y + dy * scale;
-      el.z2 = el.z + dz * scale;
-    }
     render(false);
     saveState();
   });
@@ -651,6 +639,47 @@ function render(updateProps = true) {
     document.getElementById("current-view").textContent = currentView;
   }
 
+  // First, render all points as dots
+  const pointMap = new Map();
+  elements.forEach((el) => {
+    if (el.type === "Support") {
+      const key = `${el.x.toFixed(6)},${el.y.toFixed(6)},${el.z.toFixed(6)}`;
+      if (!pointMap.has(key)) {
+        pointMap.set(key, { x: el.x, y: el.y, z: el.z, type: "Support" });
+      }
+    } else if (el.type === "Load") {
+      const key = `${el.x.toFixed(6)},${el.y.toFixed(6)},${el.z.toFixed(6)}`;
+      if (!pointMap.has(key)) {
+        pointMap.set(key, { x: el.x, y: el.y, z: el.z, type: "Load" });
+      }
+    } else if (el.type === "Member" || el.type === "Cable") {
+      const key1 = `${el.x.toFixed(6)},${el.y.toFixed(6)},${el.z.toFixed(6)}`;
+      const key2 = `${(el.x2 ?? el.x).toFixed(6)},${(el.y2 ?? el.y).toFixed(6)},${(el.z2 ?? el.z).toFixed(6)}`;
+      if (!pointMap.has(key1)) {
+        pointMap.set(key1, { x: el.x, y: el.y, z: el.z, type: "Member" });
+      }
+      if (!pointMap.has(key2)) {
+        pointMap.set(key2, { x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z, type: "Member" });
+      }
+    }
+  });
+
+  // Render points as dots
+  pointMap.forEach((point, key) => {
+    const p = projectPoint({ x: point.x, y: point.y, z: point.z });
+    const sx = cx + (p.x || 0) * zoom;
+    const sy = cy + (p.y || 0) * zoom;
+    
+    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dot.setAttribute("cx", sx);
+    dot.setAttribute("cy", sy);
+    dot.setAttribute("r", 3 * zoom);
+    dot.setAttribute("fill", point.type === "Support" ? "green" : "blue");
+    dot.setAttribute("stroke", "black");
+    dot.setAttribute("stroke-width", 1);
+    svg.appendChild(dot);
+  });
+
   elements.forEach((el) => {
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
     g.dataset.id = el.id;
@@ -677,87 +706,90 @@ function render(updateProps = true) {
       shape.setAttribute("stroke", "blue");
       shape.setAttribute("stroke-width", 2);
       if (el.type === "Cable") shape.setAttribute("stroke-dasharray", "4 2");
-    } else {
+    } else if (el.type === "Load") {
+      // Treat loads like members with draggable endpoints
+      const p1 = projectPoint({ x: el.x, y: el.y, z: el.z });
+      const p2 = projectPoint({
+        x: el.x2 ?? el.x,
+        y: el.y2 ?? el.y,
+        z: el.z2 ?? el.z,
+      });
+      shape = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      shape.setAttribute("x1", cx + (p1.x || 0) * zoom);
+      shape.setAttribute("y1", cy + (p1.y || 0) * zoom);
+      shape.setAttribute("x2", cx + (p2.x || 0) * zoom);
+      shape.setAttribute("y2", cy + (p2.y || 0) * zoom);
+      shape.setAttribute("stroke", "red");
+      shape.setAttribute("stroke-width", 2);
+      
+      // Add arrowhead at the end point
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len;
+      const ny = dx / len;
+      const arrowSize = 6 * zoom;
+      const b1x = cx + (p2.x || 0) * zoom + nx * arrowSize;
+      const b1y = cy + (p2.y || 0) * zoom + ny * arrowSize;
+      const b2x = cx + (p2.x || 0) * zoom - nx * arrowSize;
+      const b2y = cy + (p2.y || 0) * zoom - ny * arrowSize;
+      const tx = cx + (p2.x || 0) * zoom + (dx / len) * arrowSize * 1.5;
+      const ty = cy + (p2.y || 0) * zoom + (dy / len) * arrowSize * 1.5;
+      
+      const arrow = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      arrow.setAttribute("points", `${b1x},${b1y} ${b2x},${b2y} ${tx},${ty}`);
+      arrow.setAttribute("fill", "red");
+      g.appendChild(arrow);
+    } else if (el.type === "Plane") {
+      // Always render planes in continuous rotation mode
+      // In discrete mode, only render if normal matches view
+      if (currentView !== "continuous" && el.normal && el.normal !== currentView[1]) return;
+      const pts = planeCorners(el).map((p) => {
+        const pr = projectPoint(p);
+        return [cx + (pr.x || 0) * zoom, cy + (pr.y || 0) * zoom];
+      });
+      shape = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "polygon",
+      );
+      shape.setAttribute("points", pts.map((pt) => pt.join(",")).join(" "));
+      shape.setAttribute("fill", "rgba(0,0,255,0.2)");
+      shape.setAttribute("stroke", "blue");
+    } else if (el.type === "Solid") {
+      shape = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      const info = axisInfo(currentView);
+      const h = (el[axisDims[info.h.axis]] ?? 30) * zoom;
+      const v = (el[axisDims[info.v.axis]] ?? 30) * zoom;
       const p = projectPoint({ x: el.x, y: el.y, z: el.z });
       const sx = cx + (p.x || 0) * zoom;
       const sy = cy + (p.y || 0) * zoom;
-      if (el.type === "Plane") {
-        // Always render planes in continuous rotation mode
-        // In discrete mode, only render if normal matches view
-        if (currentView !== "continuous" && el.normal && el.normal !== currentView[1]) return;
-        const pts = planeCorners(el).map((p) => {
-          const pr = projectPoint(p);
-          return [cx + (pr.x || 0) * zoom, cy + (pr.y || 0) * zoom];
-        });
-        shape = document.createElementNS(
-          "http://www.w3.org/2000/svg",
-          "polygon",
-        );
-        shape.setAttribute("points", pts.map((pt) => pt.join(",")).join(" "));
-        shape.setAttribute("fill", "rgba(0,0,255,0.2)");
-        shape.setAttribute("stroke", "blue");
-      } else if (el.type === "Solid") {
-        shape = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        const info = axisInfo(currentView);
-        const h = (el[axisDims[info.h.axis]] ?? 30) * zoom;
-        const v = (el[axisDims[info.v.axis]] ?? 30) * zoom;
-        shape.setAttribute("x", sx - h / 2);
-        shape.setAttribute("y", sy - v / 2);
-        shape.setAttribute("width", h);
-        shape.setAttribute("height", v);
-        shape.setAttribute("fill", "rgba(0,0,255,0.4)");
-        shape.setAttribute("stroke", "blue");
-      } else if (el.type === "Load") {
-        const tip = projectPoint({
-          x: el.x2 ?? el.x,
-          y: el.y2 ?? el.y,
-          z: el.z2 ?? el.z,
-        });
-        const sx1 = cx + (tip.x || 0) * zoom;
-        const sy1 = cy + (tip.y || 0) * zoom;
-        const sx2 = sx;
-        const sy2 = sy;
-        shape = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        shape.setAttribute("x1", sx1);
-        shape.setAttribute("y1", sy1);
-        shape.setAttribute("x2", sx2);
-        shape.setAttribute("y2", sy2);
-        shape.setAttribute("stroke", "red");
-        shape.setAttribute("stroke-width", 2);
-        const arrow = document.createElementNS(
-          "http://www.w3.org/2000/svg",
-          "polygon",
-        );
-        const dx = sx1 - sx2;
-        const dy = sy1 - sy2;
-        const len = Math.hypot(dx, dy) || 1;
-        const nx = -dy / len;
-        const ny = dx / len;
-        const b1x = sx1 + nx * 4 * zoom;
-        const b1y = sy1 + ny * 4 * zoom;
-        const b2x = sx1 - nx * 4 * zoom;
-        const b2y = sy1 - ny * 4 * zoom;
-        const tx = sx1 + (dx / len) * 5 * zoom;
-        const ty = sy1 + (dy / len) * 5 * zoom;
-        arrow.setAttribute("points", `${b1x},${b1y} ${b2x},${b2y} ${tx},${ty}`);
-        arrow.setAttribute("fill", "red");
-        g.appendChild(arrow);
-      } else if (el.type === "Support") {
-        shape = document.createElementNS(
-          "http://www.w3.org/2000/svg",
-          "polygon",
-        );
-        shape.setAttribute(
-          "points",
-          `${sx - 6 * zoom},${sy + 10 * zoom} ${sx + 6 * zoom},${sy + 10 * zoom} ${sx},${sy}`,
-        );
-        shape.setAttribute("fill", "green");
-      }
+      shape.setAttribute("x", sx - h / 2);
+      shape.setAttribute("y", sy - v / 2);
+      shape.setAttribute("width", h);
+      shape.setAttribute("height", v);
+      shape.setAttribute("fill", "rgba(0,0,255,0.4)");
+      shape.setAttribute("stroke", "blue");
+    } else if (el.type === "Support") {
+      shape = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "polygon",
+      );
+      const p = projectPoint({ x: el.x, y: el.y, z: el.z });
+      const sx = cx + (p.x || 0) * zoom;
+      const sy = cy + (p.y || 0) * zoom;
+      shape.setAttribute(
+        "points",
+        `${sx - 6 * zoom},${sy + 10 * zoom} ${sx + 6 * zoom},${sy + 10 * zoom} ${sx},${sy}`,
+      );
+      shape.setAttribute("fill", "green");
     }
     if (shape) g.appendChild(shape);
     if (el.id === selectedId) g.setAttribute("stroke", "orange");
     svg.appendChild(g);
   });
+
+  // Render calculation results on top
+  renderCalculationResults();
 
   if (updateProps) {
     renderProperties();
@@ -849,15 +881,15 @@ function startDrag(ev) {
     else if (distanceToSegment2D({ x: mx, y: my }, p1, p2) < 6)
       dragMode = "body";
   } else if (el.type === "Load") {
-    const base = screenCoords({ x: el.x, y: el.y, z: el.z });
-    const tipSC = screenCoords({
+    const p1 = screenCoords({ x: el.x, y: el.y, z: el.z });
+    const p2 = screenCoords({
       x: el.x2 ?? el.x,
       y: el.y2 ?? el.y,
       z: el.z2 ?? el.z,
     });
-    if (distanceScreen({ x: mx, y: my }, base) < 8) dragMode = "base";
-    else if (distanceScreen({ x: mx, y: my }, tipSC) < 8) dragMode = "tip";
-    else if (distanceToSegment2D({ x: mx, y: my }, base, tipSC) < 6)
+    if (distanceScreen({ x: mx, y: my }, p1) < 8) dragMode = "start";
+    else if (distanceScreen({ x: mx, y: my }, p2) < 8) dragMode = "end";
+    else if (distanceToSegment2D({ x: mx, y: my }, p1, p2) < 6)
       dragMode = "body";
   } else if (el.type === "Plane" || el.type === "Solid") {
     const rect =
@@ -918,11 +950,11 @@ function onDrag(ev) {
       });
     }
   } else if (el.type === "Load") {
-    if (dragMode === "base") {
+    if (dragMode === "start") {
       ["x", "y", "z"].forEach((k) => {
         if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k];
       });
-    } else if (dragMode === "tip") {
+    } else if (dragMode === "end") {
       ["x2", "y2", "z2"].forEach((k) => {
         const a = k[0];
         el[k] = dragOrig[k] + delta[a];
@@ -932,13 +964,6 @@ function onDrag(ev) {
         const a = k[0];
         el[k] = dragOrig[k] + delta[a];
       });
-    }
-    if (dragMode === "tip") {
-      el.amount = Math.hypot(
-        (el.x2 ?? el.x) - el.x,
-        (el.y2 ?? el.y) - el.y,
-        (el.z2 ?? el.z) - el.z,
-      );
     }
   } else if (el.type === "Plane") {
     const info = axisInfo(currentView);
@@ -1213,7 +1238,8 @@ function buildModel() {
     .map((e) => {
       const dx = ((e.x2 ?? e.x) - e.x);
       const dy = ((e.y2 ?? e.y) - e.y);
-      const len = Math.hypot(dx, dy) || 1;
+      const dz = ((e.z2 ?? e.z) - e.z);
+      const len = Math.hypot(dx, dy, dz) || 1;
       const amt = e.amount ?? 0;
       return {
         point: getPointId(e.x, e.y, e.z),
@@ -1250,35 +1276,239 @@ async function solveModel() {
     return;
   }
   const data = await resp.json();
+  
+  // Store results for visualization
+  lastCalculationResults = {
+    displacements: data.displacements || {},
+    reactions: data.reactions || {},
+    points: payload.points
+  };
+  
   const lines = [];
+  
+  // Header
+  lines.push("STRUCTURAL ANALYSIS REPORT");
+  lines.push("=".repeat(50));
+  lines.push("");
+  
+  // Model summary
+  lines.push("MODEL SUMMARY:");
+  lines.push(`  Total Points: ${payload.points.length}`);
+  lines.push(`  Total Members: ${payload.members.length}`);
+  lines.push(`  Total Loads: ${payload.loads.length}`);
+  lines.push(`  Total Supports: ${payload.supports.length}`);
+  lines.push("");
+  
+  // Issues section
   if (data.issues && data.issues.length) {
-    lines.push("Issues:");
+    lines.push("ISSUES DETECTED:");
     for (const issue of data.issues) {
-      lines.push(" - " + issue);
+      lines.push(`  ⚠️  ${issue}`);
     }
     lines.push("");
   }
-  lines.push("Displacements:");
-  for (const [pointId, v] of Object.entries(data.displacements || {})) {
-    const point = payload.points.find(p => p.id === parseInt(pointId));
-    if (point) {
-      lines.push(
-        `Point ${pointId} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)}): ux=${(+v[0]).toExponential(3)} m, uy=${(+v[1]).toExponential(3)} m, rz=${(+v[2]).toExponential(3)} rad`,
-      );
+  
+  // Displacements section
+  lines.push("DISPLACEMENTS:");
+  lines.push("-".repeat(20));
+  const displacements = Object.entries(data.displacements || {});
+  if (displacements.length === 0) {
+    lines.push("  No displacement results available.");
+  } else {
+    for (const [pointId, v] of displacements) {
+      const point = payload.points.find(p => p.id === parseInt(pointId));
+      if (point) {
+        const [ux, uy, rz] = v;
+        const ux_mm = ux * 1000; // Convert to mm
+        const uy_mm = uy * 1000; // Convert to mm
+        const rz_deg = rz * 180 / Math.PI; // Convert to degrees
+        
+        lines.push(`  Point ${pointId} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)}):`);
+        lines.push(`    Horizontal displacement (ux): ${ux_mm.toFixed(6)} mm`);
+        lines.push(`    Vertical displacement (uy): ${uy_mm.toFixed(6)} mm`);
+        lines.push(`    Rotation (rz): ${rz_deg.toFixed(6)} degrees`);
+        lines.push("");
+      }
     }
   }
-  lines.push("Reactions:");
-  for (const [pointId, v] of Object.entries(data.reactions || {})) {
-    const point = payload.points.find(p => p.id === parseInt(pointId));
-    if (point) {
-      lines.push(
-        `Point ${pointId} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)}): fx=${(+v[0]).toExponential(3)} N, fy=${(+v[1]).toExponential(3)} N, mz=${(+v[2]).toExponential(3)} N·m`,
-      );
+  
+  // Reactions section
+  lines.push("REACTIONS:");
+  lines.push("-".repeat(20));
+  const reactions = Object.entries(data.reactions || {});
+  if (reactions.length === 0) {
+    lines.push("  No reaction results available.");
+  } else {
+    for (const [pointId, v] of reactions) {
+      const point = payload.points.find(p => p.id === parseInt(pointId));
+      if (point) {
+        const [fx, fy, mz] = v;
+        const fx_kN = fx / 1000; // Convert to kN
+        const fy_kN = fy / 1000; // Convert to kN
+        const mz_kNm = mz / 1000; // Convert to kN·m
+        
+        lines.push(`  Point ${pointId} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)}):`);
+        lines.push(`    Horizontal force (fx): ${fx_kN.toFixed(6)} kN`);
+        lines.push(`    Vertical force (fy): ${fy_kN.toFixed(6)} kN`);
+        lines.push(`    Moment (mz): ${mz_kNm.toFixed(6)} kN·m`);
+        lines.push("");
+      }
     }
   }
+  
+  // Load summary
+  lines.push("APPLIED LOADS:");
+  lines.push("-".repeat(20));
+  if (payload.loads.length === 0) {
+    lines.push("  No loads applied.");
+  } else {
+    for (let i = 0; i < payload.loads.length; i++) {
+      const load = payload.loads[i];
+      const point = payload.points.find(p => p.id === load.point);
+      if (point) {
+        const magnitude = Math.sqrt(load.fx * load.fx + load.fy * load.fy);
+        const angle = Math.atan2(load.fy, load.fx) * 180 / Math.PI;
+        lines.push(`  Load ${i + 1} at Point ${load.point} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}):`);
+        lines.push(`    Magnitude: ${magnitude.toFixed(6)} N`);
+        lines.push(`    Direction: ${angle.toFixed(2)}° from horizontal`);
+        lines.push(`    Components: fx = ${load.fx.toFixed(6)} N, fy = ${load.fy.toFixed(6)} N`);
+        lines.push("");
+      }
+    }
+  }
+  
+  // Support summary
+  lines.push("SUPPORT CONDITIONS:");
+  lines.push("-".repeat(20));
+  if (payload.supports.length === 0) {
+    lines.push("  No supports defined.");
+  } else {
+    for (let i = 0; i < payload.supports.length; i++) {
+      const support = payload.supports[i];
+      const point = payload.points.find(p => p.id === support.point);
+      if (point) {
+        const constraints = [];
+        if (support.ux) constraints.push("ux");
+        if (support.uy) constraints.push("uy");
+        if (support.rz) constraints.push("rz");
+        lines.push(`  Support ${i + 1} at Point ${support.point} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}):`);
+        lines.push(`    Constraints: ${constraints.length > 0 ? constraints.join(", ") : "none"}`);
+        lines.push("");
+      }
+    }
+  }
+  
+  // Member summary
+  lines.push("MEMBER PROPERTIES:");
+  lines.push("-".repeat(20));
+  if (payload.members.length === 0) {
+    lines.push("  No members defined.");
+  } else {
+    for (let i = 0; i < payload.members.length; i++) {
+      const member = payload.members[i];
+      const startPoint = payload.points.find(p => p.id === member.start);
+      const endPoint = payload.points.find(p => p.id === member.end);
+      if (startPoint && endPoint) {
+        const length = Math.sqrt(
+          Math.pow(endPoint.x - startPoint.x, 2) + 
+          Math.pow(endPoint.y - startPoint.y, 2)
+        );
+        lines.push(`  Member ${i + 1} (Points ${member.start} → ${member.end}):`);
+        lines.push(`    Length: ${length.toFixed(6)} m`);
+        lines.push(`    Young's Modulus (E): ${member.E.toExponential(3)} Pa`);
+        lines.push(`    Cross-sectional Area (A): ${member.A.toExponential(3)} m²`);
+        lines.push(`    Second Moment of Inertia (I): ${member.I.toExponential(3)} m⁴`);
+        lines.push("");
+      }
+    }
+  }
+  
   out.textContent = lines.join("\n");
+  
+  // Re-render to show calculation results
+  render(false);
 }
 
 document.getElementById("solve-btn").addEventListener("click", solveModel);
+
+// Global variable to store the last calculation results
+let lastCalculationResults = null;
+
+// Unified function to render force vectors with consistent scaling
+function renderForceVector(group, startX, startY, endX, endY, color, opacity = 1.0) {
+  const dx = endX - startX;
+  const dy = endY - startY;
+  const magnitude = Math.hypot(dx, dy);
+  
+  if (magnitude < 1) return; // Skip very small vectors
+  
+  // Draw the vector line
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  line.setAttribute("x1", startX);
+  line.setAttribute("y1", startY);
+  line.setAttribute("x2", endX);
+  line.setAttribute("y2", endY);
+  line.setAttribute("stroke", color);
+  line.setAttribute("stroke-width", 2);
+  line.setAttribute("opacity", opacity);
+  group.appendChild(line);
+  
+  // Draw the arrow
+  const len = magnitude || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  const arrowSize = 6 * zoom;
+  const b1x = endX + nx * arrowSize;
+  const b1y = endY + ny * arrowSize;
+  const b2x = endX - nx * arrowSize;
+  const b2y = endY - ny * arrowSize;
+  const tx = endX + (dx / len) * arrowSize * 1.5;
+  const ty = endY + (dy / len) * arrowSize * 1.5;
+  
+  const arrow = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+  arrow.setAttribute("points", `${b1x},${b1y} ${b2x},${b2y} ${tx},${ty}`);
+  arrow.setAttribute("fill", color);
+  arrow.setAttribute("opacity", opacity);
+  group.appendChild(arrow);
+}
+
+// Function to render calculation results on the plot
+function renderCalculationResults() {
+  if (!lastCalculationResults) return;
+  
+  const svg = document.getElementById("canvas");
+  const rect = svg.getBoundingClientRect();
+  const cx = rect.width / 2 + panX;
+  const cy = rect.height / 2 + panY;
+  
+  const { displacements, reactions, points } = lastCalculationResults;
+  
+  // Create a group for calculation results
+  const resultsGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  resultsGroup.setAttribute("class", "calculation-results");
+  svg.appendChild(resultsGroup);
+  
+  // Render reaction force vectors
+  Object.entries(reactions || {}).forEach(([pointId, v]) => {
+    const point = points.find(p => p.id === parseInt(pointId));
+    if (!point) return;
+    
+    const [fx, fy, mz] = v;
+    const magnitude = Math.sqrt(fx * fx + fy * fy);
+    if (magnitude < 1e-6) return; // Skip very small reactions
+    
+    const p = projectPoint({ x: point.x, y: point.y, z: point.z });
+    const sx = cx + (p.x || 0) * zoom;
+    const sy = cy + (p.y || 0) * zoom;
+    
+    // Scale reaction for visualization (convert to kN and scale)
+    const scale = 0.001 * 0.1; // Convert N to kN and scale down
+    const dx = fx * scale * zoom;
+    const dy = fy * scale * zoom;
+    
+    // Draw reaction vector
+    renderForceVector(resultsGroup, sx, sy, sx + dx, sy + dy, "darkgray", 0.8);
+  });
+}
 
 loadState();

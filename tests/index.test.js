@@ -280,13 +280,13 @@ describe("server round‑trips", () => {
     );
   });
 
-  test("solveModel() prints 'Displacements:' block on success", async () => {
+  test("solveModel() prints 'DISPLACEMENTS:' block on success", async () => {
     fetch.mockResponseOnce(
       JSON.stringify({ displacements: { "1": [0, 0, 0] }, reactions: {} }),
     );
     await solveModel();
     expect(document.getElementById("solve-output").textContent).toMatch(
-      /Displacements:/,
+      /DISPLACEMENTS:/,
     );
   });
 
