@@ -6,7 +6,7 @@ import sys
 from flask import Flask, jsonify, render_template, request
 from flask_login import current_user
 
-from timber import Joint, Load, Member, Model, Support, solve_with_diagnostics
+from timber import Point, Load, Member, Model, Support, solve_with_diagnostics
 from timber.extensions import bcrypt, db, login_manager, migrate
 
 # -------------------------------------------------------------------
@@ -71,7 +71,7 @@ def create_app(config_object: str | None = None) -> Flask:
     def solve_endpoint():
         """
         Solve a structural model sent as JSON.
-        Expects keys: joints, members, loads, supports (each a list of dicts).
+        Expects keys: points, members, loads, supports (each a list of dicts).
         Returns JSON with 'displacements' and 'reactions'.
         """
         if not request.is_json:
@@ -80,7 +80,7 @@ def create_app(config_object: str | None = None) -> Flask:
         data = request.get_json()
         try:
             model = Model(
-                joints=[Joint(**j) for j in data.get("joints", [])],
+                points=[Point(**p) for p in data.get("points", [])],
                 members=[Member(**m) for m in data.get("members", [])],
                 loads=[Load(**l) for l in data.get("loads", [])],
                 supports=[Support(**s) for s in data.get("supports", [])],

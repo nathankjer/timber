@@ -401,7 +401,6 @@ function getSnapPoints(ignoreId) {
   const pts = [];
   elements.forEach((e) => {
     if (e.id === ignoreId) return;
-    if (e.type === "Joint") pts.push({ x: e.x, y: e.y, z: e.z, kind: "Joint" });
     if (e.type === "Support")
       pts.push({ x: e.x, y: e.y, z: e.z, kind: e.type });
     if (e.type === "Load") {
@@ -466,36 +465,19 @@ function getSnapLines(ignoreId) {
   return lines;
 }
 
-function ensureJointAt(x, y, z) {
-  const tol = 1e-6;
-  if (
-    elements.some(
-      (e) =>
-        e.type === "Joint" &&
-        Math.abs(e.x - x) < tol &&
-        Math.abs(e.y - y) < tol &&
-        Math.abs(e.z - z) < tol,
-    )
-  )
-    return;
-  elements.push({ id: generateId(), type: "Joint", x, y, z });
-}
-
 function applySnapping(el) {
   const pts = getSnapPoints(el.id);
   const lines = getSnapLines(el.id);
 
-  function snapObj(obj, createJoint) {
+  function snapObj(obj) {
     const sc = screenCoords(obj);
     let best = null;
-    let bestKind = null;
     let bestDist = SNAP_PIXELS;
     pts.forEach((pt) => {
       const d = distanceScreen(sc, screenCoords(pt));
       if (d < bestDist) {
         best = pt;
         bestDist = d;
-        bestKind = pt.kind;
       }
     });
     lines.forEach((line) => {
@@ -504,25 +486,22 @@ function applySnapping(el) {
       if (d < bestDist) {
         best = near;
         bestDist = d;
-        bestKind = "Line";
       }
     });
     if (best) {
       obj.x = best.x;
       obj.y = best.y;
       obj.z = best.z;
-      if (createJoint && bestKind === "End")
-        ensureJointAt(best.x, best.y, best.z);
     }
   }
 
-  if (el.type === "Joint" || el.type === "Support") {
-    snapObj(el, false);
+  if (el.type === "Support") {
+    snapObj(el);
   } else if (el.type === "Load") {
     const base = { x: el.x, y: el.y, z: el.z };
     const tip = { x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z };
-    snapObj(base, false);
-    snapObj(tip, false);
+    snapObj(base);
+    snapObj(tip);
     el.x = base.x;
     el.y = base.y;
     el.z = base.z;
@@ -532,8 +511,8 @@ function applySnapping(el) {
   } else if (el.type === "Member" || el.type === "Cable") {
     const p1 = { x: el.x, y: el.y, z: el.z };
     const p2 = { x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z };
-    snapObj(p1, true);
-    snapObj(p2, true);
+    snapObj(p1);
+    snapObj(p2);
     el.x = p1.x;
     el.y = p1.y;
     el.z = p1.z;
@@ -541,7 +520,7 @@ function applySnapping(el) {
     el.y2 = p2.y;
     el.z2 = p2.z;
   } else {
-    snapObj(el, false);
+    snapObj(el);
   }
 }
 
@@ -702,16 +681,7 @@ function render(updateProps = true) {
       const p = projectPoint({ x: el.x, y: el.y, z: el.z });
       const sx = cx + (p.x || 0) * zoom;
       const sy = cy + (p.y || 0) * zoom;
-      if (el.type === "Joint") {
-        shape = document.createElementNS(
-          "http://www.w3.org/2000/svg",
-          "circle",
-        );
-        shape.setAttribute("cx", sx);
-        shape.setAttribute("cy", sy);
-        shape.setAttribute("r", 4);
-        shape.setAttribute("fill", "blue");
-      } else if (el.type === "Plane") {
+      if (el.type === "Plane") {
         // Always render planes in continuous rotation mode
         // In discrete mode, only render if normal matches view
         if (currentView !== "continuous" && el.normal && el.normal !== currentView[1]) return;
@@ -782,15 +752,6 @@ function render(updateProps = true) {
           `${sx - 6 * zoom},${sy + 10 * zoom} ${sx + 6 * zoom},${sy + 10 * zoom} ${sx},${sy}`,
         );
         shape.setAttribute("fill", "green");
-      } else {
-        shape = document.createElementNS(
-          "http://www.w3.org/2000/svg",
-          "circle",
-        );
-        shape.setAttribute("cx", sx);
-        shape.setAttribute("cy", sy);
-        shape.setAttribute("r", 4);
-        shape.setAttribute("fill", "blue");
       }
     }
     if (shape) g.appendChild(shape);
@@ -1199,34 +1160,49 @@ document.querySelectorAll(".view-btn").forEach((btn) => {
 });
 
 function buildModel() {
-  const joints = [];
-  const map = new Map();
-  const key = (x, y) => `${x.toFixed(6)},${y.toFixed(6)}`;
-  function idx(x, y) {
-    const k = key(x, y);
-    if (!map.has(k)) {
-      map.set(k, joints.length);
-      joints.push({ x, y });
+  // First, collect all unique points from all elements
+  const pointMap = new Map();
+  let nextPointId = 1;
+  
+  function getOrCreatePoint(x, y, z = 0) {
+    const key = `${x.toFixed(6)},${y.toFixed(6)},${z.toFixed(6)}`;
+    if (!pointMap.has(key)) {
+      pointMap.set(key, { id: nextPointId++, x, y, z });
     }
-    return map.get(k);
+    return pointMap.get(key);
   }
-
+  
+  // Collect points from all elements
   elements.forEach((el) => {
-    if (el.type === "Joint" || el.type === "Support") {
-      idx(el.x, el.y);
-    } else if (el.type === "Member" || el.type === "Cable") {
-      idx(el.x, el.y);
-      idx(el.x2 ?? el.x, el.y2 ?? el.y);
+    if (el.type === "Support") {
+      getOrCreatePoint(el.x, el.y, el.z);
     } else if (el.type === "Load") {
-      idx(el.x, el.y);
+      getOrCreatePoint(el.x, el.y, el.z);
+    } else if (el.type === "Member" || el.type === "Cable") {
+      getOrCreatePoint(el.x, el.y, el.z);
+      getOrCreatePoint(el.x2 ?? el.x, el.y2 ?? el.y, el.z2 ?? el.z);
     }
   });
+  
+  const points = Array.from(pointMap.values());
+  
+  // Create mapping from coordinates to point IDs
+  const coordToPointId = new Map();
+  points.forEach(point => {
+    const key = `${point.x.toFixed(6)},${point.y.toFixed(6)},${point.z.toFixed(6)}`;
+    coordToPointId.set(key, point.id);
+  });
+  
+  function getPointId(x, y, z = 0) {
+    const key = `${x.toFixed(6)},${y.toFixed(6)},${z.toFixed(6)}`;
+    return coordToPointId.get(key);
+  }
 
   const members = elements
     .filter((e) => e.type === "Member" || e.type === "Cable")
     .map((e) => ({
-      start: idx(e.x, e.y),
-      end: idx(e.x2 ?? e.x, e.y2 ?? e.y),
+      start: getPointId(e.x, e.y, e.z),
+      end: getPointId(e.x2 ?? e.x, e.y2 ?? e.y, e.z2 ?? e.z),
       E: e.E ?? 200e9,
       A: e.A ?? 0.01,
       I: e.I ?? 1e-6,
@@ -1235,13 +1211,12 @@ function buildModel() {
   const loads = elements
     .filter((e) => e.type === "Load")
     .map((e) => {
-      const i = idx(e.x, e.y);
-      const dx = (e.x2 ?? e.x) - e.x;
-      const dy = (e.y2 ?? e.y) - e.y;
+      const dx = ((e.x2 ?? e.x) - e.x);
+      const dy = ((e.y2 ?? e.y) - e.y);
       const len = Math.hypot(dx, dy) || 1;
       const amt = e.amount ?? 0;
       return {
-        joint: i,
+        point: getPointId(e.x, e.y, e.z),
         fx: (amt * dx) / len,
         fy: (amt * dy) / len,
         mz: 0,
@@ -1252,13 +1227,13 @@ function buildModel() {
   const supports = elements
     .filter((e) => e.type === "Support")
     .map((e) => ({
-      joint: idx(e.x, e.y),
+      point: getPointId(e.x, e.y, e.z),
       ux: e.ux !== false,
       uy: e.uy !== false,
       rz: e.rz !== false,
     }));
 
-  return { joints, members, loads, supports };
+  return { points, members, loads, supports };
 }
 
 async function solveModel() {
@@ -1284,16 +1259,22 @@ async function solveModel() {
     lines.push("");
   }
   lines.push("Displacements:");
-  for (const [k, v] of Object.entries(data.displacements || {})) {
-    lines.push(
-      `Joint ${k}: ux=${(+v[0]).toExponential(3)} m, uy=${(+v[1]).toExponential(3)} m, rz=${(+v[2]).toExponential(3)} rad`,
-    );
+  for (const [pointId, v] of Object.entries(data.displacements || {})) {
+    const point = payload.points.find(p => p.id === parseInt(pointId));
+    if (point) {
+      lines.push(
+        `Point ${pointId} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)}): ux=${(+v[0]).toExponential(3)} m, uy=${(+v[1]).toExponential(3)} m, rz=${(+v[2]).toExponential(3)} rad`,
+      );
+    }
   }
   lines.push("Reactions:");
-  for (const [k, v] of Object.entries(data.reactions || {})) {
-    lines.push(
-      `Joint ${k}: fx=${(+v[0]).toExponential(3)} N, fy=${(+v[1]).toExponential(3)} N, mz=${(+v[2]).toExponential(3)} N·m`,
-    );
+  for (const [pointId, v] of Object.entries(data.reactions || {})) {
+    const point = payload.points.find(p => p.id === parseInt(pointId));
+    if (point) {
+      lines.push(
+        `Point ${pointId} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)}): fx=${(+v[0]).toExponential(3)} N, fy=${(+v[1]).toExponential(3)} N, mz=${(+v[2]).toExponential(3)} N·m`,
+      );
+    }
   }
   out.textContent = lines.join("\n");
 }

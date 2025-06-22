@@ -190,25 +190,11 @@ describe("plane / solid helpers", () => {
 //--------------------------------------------------------------------
 
 describe("snapping utilities", () => {
-  test("ensureJointAt creates exactly one joint at given coordinates", () => {
-    const jointsBefore = buildModel().joints.length;
-    ensureJointAt(1, 2, 3);
-    const jointsAfterFirst = buildModel().joints.length;
-    expect(jointsAfterFirst).toBe(jointsBefore + 1);
-
-    // Second insertion at same spot should **not** increase joint count.
-    ensureJointAt(1, 2, 3);
-    const jointsAfterSecond = buildModel().joints.length;
-    expect(jointsAfterSecond).toBe(jointsAfterFirst);
-  });
-
   test("getSnapPoints collects points from various element types", () => {
-    addElement("Joint");
     addElement("Load");
     addElement("Member");
 
     const pts = getSnapPoints();
-    expect(pts.some((p) => p.kind === "Joint")).toBe(true);
     expect(pts.some((p) => p.kind === "Load")).toBe(true);
     expect(pts.some((p) => p.kind === "End")).toBe(true); // member ends
   });
@@ -228,13 +214,11 @@ describe("snapping utilities", () => {
 
 describe("buildModel", () => {
   test("returns non‑empty arrays after adding typical elements", () => {
-    addElement("Joint");
     addElement("Support");
     addElement("Member");
     addElement("Load");
 
     const model = buildModel();
-    expect(model.joints.length).toBeGreaterThan(0);
     expect(model.members.length).toBeGreaterThan(0);
     expect(model.loads.length).toBeGreaterThan(0);
     expect(model.supports.length).toBeGreaterThan(0);
@@ -246,18 +230,18 @@ describe("buildModel", () => {
 //--------------------------------------------------------------------
 
 describe("addElement API", () => {
-  test('addElement("Joint") increases joint count', () => {
-    const before = buildModel().joints.length;
-    addElement("Joint");
-    const after = buildModel().joints.length;
+  test('addElement("Member") adds a member with two endpoints', () => {
+    const before = buildModel().members.length;
+    addElement("Member");
+    const after = buildModel().members.length;
     expect(after).toBe(before + 1);
   });
 
-  test('addElement("Member") adds two joints (start & end)', () => {
-    const before = buildModel().joints.length;
-    addElement("Member");
-    const after = buildModel().joints.length;
-    expect(after).toBe(before + 2);
+  test('addElement("Support") adds a support point', () => {
+    const before = buildModel().supports.length;
+    addElement("Support");
+    const after = buildModel().supports.length;
+    expect(after).toBe(before + 1);
   });
 });
 
@@ -298,7 +282,7 @@ describe("server round‑trips", () => {
 
   test("solveModel() prints 'Displacements:' block on success", async () => {
     fetch.mockResponseOnce(
-      JSON.stringify({ displacements: { 0: [0, 0, 0] }, reactions: {} }),
+      JSON.stringify({ displacements: { "1": [0, 0, 0] }, reactions: {} }),
     );
     await solveModel();
     expect(document.getElementById("solve-output").textContent).toMatch(
@@ -416,13 +400,13 @@ describe("zoom and keyboard controls", () => {
   });
 
   test("pressing Delete triggers deleteElement", () => {
-    addElement("Joint");
+    addElement("Member");
     const g = document.querySelector("#canvas g");
     g.dispatchEvent(
       new MouseEvent("mousedown", { clientX: 0, clientY: 0, bubbles: true }),
     );
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete" }));
-    expect(buildModel().joints.length).toBe(0);
+    expect(buildModel().members.length).toBe(0);
   });
 
   test("holding Shift and scrolling zooms", () => {

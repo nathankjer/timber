@@ -9,11 +9,11 @@ import sys
 import math
 import numpy as np
 
-# Make sure “src” is importable, just like the baseline file does
+# Make sure "src" is importable, just like the baseline file does
 sys.path.append("src")
 
 # --- public API imports ---------------------------------------------------- #
-from timber import Joint, Member, Load, Support, Model, solve
+from timber import Point, Member, Load, Support, Model, solve
 
 # --- internal helpers ------------------------------------------------------ #
 from timber.engine import (
@@ -30,13 +30,13 @@ from timber.engine import (
 
 def test_engine_runs():
     model = Model(
-        joints=[Joint(0.0, 0.0), Joint(1.0, 0.0)],
-        members=[Member(start=0, end=1, E=200e9, A=0.01, I=1e-6)],
-        loads=[Load(joint=1, fy=-100.0)],
-        supports=[Support(joint=0, ux=True, uy=True, rz=True)],
+        points=[Point(id=1, x=0.0, y=0.0), Point(id=2, x=1.0, y=0.0)],
+        members=[Member(start=1, end=2, E=200e9, A=0.01, I=1e-6)],
+        loads=[Load(point=2, fy=-100.0)],
+        supports=[Support(point=1, ux=True, uy=True, rz=True)],
     )
     result = solve(model)
-    assert 1 in result.displacements
+    assert 2 in result.displacements
 
 
 def test_cantilever_beam_deflection():
@@ -46,26 +46,26 @@ def test_cantilever_beam_deflection():
     F = -1000.0
 
     model = Model(
-        joints=[Joint(0.0, 0.0), Joint(L, 0.0)],
-        members=[Member(start=0, end=1, E=E, A=0.01, I=I)],
-        loads=[Load(joint=1, fy=F)],
-        supports=[Support(joint=0, ux=True, uy=True, rz=True)],
+        points=[Point(id=1, x=0.0, y=0.0), Point(id=2, x=L, y=0.0)],
+        members=[Member(start=1, end=2, E=E, A=0.01, I=I)],
+        loads=[Load(point=2, fy=F)],
+        supports=[Support(point=1, ux=True, uy=True, rz=True)],
     )
     res = solve(model)
-    dy = res.displacements[1][1]
+    dy = res.displacements[2][1]
     expected = F * L**3 / (3 * E * I)
     assert math.isclose(dy, expected, rel_tol=1e-4)
 
 
 def test_null_load_values():
     model = Model(
-        joints=[Joint(0.0, 0.0), Joint(1.0, 0.0)],
-        members=[Member(start=0, end=1, E=200e9, A=0.01, I=1e-6)],
-        loads=[Load(joint=1, fx=None, fy=None, mz=None)],
-        supports=[Support(joint=0, ux=True, uy=True, rz=True)],
+        points=[Point(id=1, x=0.0, y=0.0), Point(id=2, x=1.0, y=0.0)],
+        members=[Member(start=1, end=2, E=200e9, A=0.01, I=1e-6)],
+        loads=[Load(point=2, fx=0.0, fy=0.0, mz=0.0)],
+        supports=[Support(point=1, ux=True, uy=True, rz=True)],
     )
     result = solve(model)
-    assert isinstance(result.displacements[1][1], float)
+    assert isinstance(result.displacements[2][1], float)
 
 
 # --------------------------------------------------------------------------- #
@@ -104,12 +104,12 @@ def test_assemble_applies_support_constraints():
     """Rows/cols associated with fully fixed joint should turn into an
     identity sub-matrix after boundary conditions are enforced."""
     model = Model(
-        joints=[Joint(0, 0), Joint(1, 0)],
-        members=[Member(0, 1, 210e9, 0.01, 1e-6)],
-        supports=[Support(0, ux=True, uy=True, rz=True)],
+        points=[Point(id=1, x=0, y=0), Point(id=2, x=1, y=0)],
+        members=[Member(start=1, end=2, E=210e9, A=0.01, I=1e-6)],
+        supports=[Support(point=1, ux=True, uy=True, rz=True)],
     )
     _, _, K, _ = _assemble_matrices(model)
-    # DOF indices 0,1,2 correspond to joint 0 constraints
+    # DOF indices 0,1,2 correspond to point 1 constraints
     fixed = (0, 1, 2)
     for i in fixed:
         # off-diagonals must be zero
@@ -124,11 +124,11 @@ def test_assemble_applies_support_constraints():
 def test_diagnostics_detect_unstable_and_missing_supports():
     """Model with no supports is singular and should trigger two distinct
     issue flags."""
-    model = Model(joints=[Joint(0, 0)])
+    model = Model(points=[Point(id=1, x=0, y=0)])
     res, issues = solve_with_diagnostics(model)
 
-    # Displacements should exist for the single joint
-    assert 0 in res.displacements
+    # Displacements should exist for the single point
+    assert 1 in res.displacements
     # Diagnostic messages
     assert any("unstable" in msg for msg in issues)
     assert any("No supports" in msg for msg in issues)
@@ -137,9 +137,9 @@ def test_diagnostics_detect_unstable_and_missing_supports():
 def test_diagnostics_detect_zero_length_member():
     """Zero-length members should be flagged."""
     model = Model(
-        joints=[Joint(0, 0), Joint(0, 0)],  # identical coords
-        members=[Member(0, 1, 210e9, 0.01, 1e-6)],
-        supports=[Support(0, ux=True, uy=True, rz=True)],
+        points=[Point(id=1, x=0, y=0), Point(id=2, x=0, y=0)],  # identical coords
+        members=[Member(start=1, end=2, E=210e9, A=0.01, I=1e-6)],
+        supports=[Support(point=1, ux=True, uy=True, rz=True)],
     )
     _, issues = solve_with_diagnostics(model)
     assert any("zero length" in msg for msg in issues)
@@ -149,10 +149,10 @@ def test_diagnostics_detect_large_displacements():
     """Extremely flexible cantilever should produce |u|max > 1e6 — this
     triggers the large-displacement warning but *not* the instability one."""
     model = Model(
-        joints=[Joint(0, 0), Joint(1.0, 0)],
-        members=[Member(0, 1, E=1e3, A=1e-4, I=1e-8)],
-        loads=[Load(joint=1, fy=-1e5)],  # big tip load
-        supports=[Support(0, ux=True, uy=True, rz=True)],
+        points=[Point(id=1, x=0, y=0), Point(id=2, x=1.0, y=0)],
+        members=[Member(start=1, end=2, E=1e3, A=1e-4, I=1e-8)],
+        loads=[Load(point=2, fy=-1e5)],  # big tip load
+        supports=[Support(point=1, ux=True, uy=True, rz=True)],
     )
     _, issues = solve_with_diagnostics(model)
     assert any("Very large displacements" in msg for msg in issues)

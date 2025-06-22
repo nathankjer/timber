@@ -1,7 +1,7 @@
 """Main timber package exposing calculation engine."""
 
 from .engine import (
-    Joint,
+    Point,
     Load,
     Member,
     Model,
@@ -14,7 +14,7 @@ from .extensions import db
 from .models import User
 
 __all__ = [
-    "Joint",
+    "Point",
     "Member",
     "Load",
     "Support",
