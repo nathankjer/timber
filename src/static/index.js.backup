@@ -26,98 +26,11 @@ function generateId() {
 // Use `var` so `currentView` becomes a property of the global object.
 // This allows tests (which run the file in a VM sandbox) to mutate
 // `currentView` by assigning to `global.currentView`.
-var currentView = "+Z";
+var currentView = "+X";
 
 function setCurrentView(view) {
   currentView = view;
-  // Reset rotation when switching to discrete views
-  rotationX = 0;
-  rotationY = 0;
-  rotationZ = 0;
 }
-
-// Rotation state for continuous rotation
-let rotationX = 0; // rotation around X axis (pitch)
-let rotationY = 0; // rotation around Y axis (yaw) 
-let rotationZ = 0; // rotation around Z axis (roll)
-let isRotating = false;
-let rotationStartX = 0;
-let rotationStartY = 0;
-let rotationOrigX = 0;
-let rotationOrigY = 0;
-
-// Convert rotation angles to a 3x3 rotation matrix
-function getRotationMatrix() {
-  const cx = Math.cos(rotationX);
-  const sx = Math.sin(rotationX);
-  const cy = Math.cos(rotationY);
-  const sy = Math.sin(rotationY);
-  const cz = Math.cos(rotationZ);
-  const sz = Math.sin(rotationZ);
-  
-  // Combined rotation matrix (Z * Y * X)
-  return [
-    [cy * cz, sx * sy * cz - cx * sz, cx * sy * cz + sx * sz],
-    [cy * sz, sx * sy * sz + cx * cz, cx * sy * sz - sx * cz],
-    [-sy, sx * cy, cx * cy]
-  ];
-}
-
-// Apply rotation matrix to a 3D point
-function rotatePoint(p, matrix) {
-  return {
-    x: matrix[0][0] * p.x + matrix[0][1] * p.y + matrix[0][2] * p.z,
-    y: matrix[1][0] * p.x + matrix[1][1] * p.y + matrix[1][2] * p.z,
-    z: matrix[2][0] * p.x + matrix[2][1] * p.y + matrix[2][2] * p.z
-  };
-}
-
-// Start rotation when shift is held and mouse is dragged
-function startRotation(ev) {
-  if (!ev.shiftKey) return;
-  
-  isRotating = true;
-  rotationStartX = ev.clientX;
-  rotationStartY = ev.clientY;
-  rotationOrigX = rotationX;
-  rotationOrigY = rotationY;
-  
-  // Switch to continuous rotation mode
-  if (["+X", "-X", "+Y", "-Y", "+Z", "-Z"].includes(currentView)) {
-    currentView = "continuous";
-  }
-  
-  document.addEventListener("mousemove", onRotation);
-  document.addEventListener("mouseup", endRotation);
-  ev.preventDefault();
-  ev.stopPropagation();
-}
-
-// Handle rotation during mouse drag
-function onRotation(ev) {
-  if (!isRotating) return;
-  
-  const dx = ev.clientX - rotationStartX;
-  const dy = ev.clientY - rotationStartY;
-  
-  // Convert screen deltas to rotation angles
-  // Scale factors for sensitivity
-  const sensitivityX = 0.01; // Y rotation (horizontal mouse movement)
-  const sensitivityY = 0.01; // X rotation (vertical mouse movement)
-  
-  rotationX = rotationOrigX + dy * sensitivityY;
-  rotationY = rotationOrigY + dx * sensitivityX;
-  
-  render();
-}
-
-// End rotation
-function endRotation() {
-  isRotating = false;
-  document.removeEventListener("mousemove", onRotation);
-  document.removeEventListener("mouseup", endRotation);
-}
-
 let zoom = 1;
 let panX = 0;
 let panY = 0;
@@ -140,10 +53,6 @@ function resetPanZoom() {
   zoom = 1;
   panX = 0;
   panY = 0;
-  rotationX = 0;
-  rotationY = 0;
-  rotationZ = 0;
-  currentView = "+X";
   render();
 }
 const globalProps = { g: 9.81, units: "metric" };
@@ -226,61 +135,36 @@ document.getElementById("sheet-list").addEventListener("click", (ev) => {
 renderSheetList();
 
 function projectPoint(p) {
-  // Check if we're in a discrete view or using continuous rotation
-  const discreteViews = ["+X", "-X", "+Y", "-Y", "+Z", "-Z"];
-  
-  if (discreteViews.includes(currentView)) {
-    // Use discrete orthographic projection
-    switch (currentView) {
-      case "+X":
-        return { x: p.y, y: -p.z };
-      case "-X":
-        return { x: -p.y, y: -p.z };
-      case "+Y":
-        return { x: p.x, y: -p.z };
-      case "-Y":
-        return { x: -p.x, y: -p.z };
-      case "+Z":
-        return { x: p.x, y: -p.y };
-      case "-Z":
-        return { x: -p.x, y: -p.y };
-    }
-  } else {
-    // Use continuous rotation
-    const matrix = getRotationMatrix();
-    const rotated = rotatePoint(p, matrix);
-    // Project onto XY plane (looking down Z axis)
-    return { x: rotated.x, y: -rotated.y };
+  switch (currentView) {
+    case "+X":
+      return { x: p.y, y: -p.z };
+    case "-X":
+      return { x: -p.y, y: -p.z };
+    case "+Y":
+      return { x: p.x, y: -p.z };
+    case "-Y":
+      return { x: -p.x, y: -p.z };
+    case "+Z":
+      return { x: p.x, y: -p.y };
+    case "-Z":
+      return { x: -p.x, y: -p.y };
   }
 }
 
 function unprojectDelta(dx, dy) {
-  // Check if we're in a discrete view or using continuous rotation
-  const discreteViews = ["+X", "-X", "+Y", "-Y", "+Z", "-Z"];
-  
-  if (discreteViews.includes(currentView)) {
-    // Use discrete orthographic projection
-    switch (currentView) {
-      case "+X":
-        return { y: dx, z: -dy };
-      case "-X":
-        return { y: -dx, z: -dy };
-      case "+Y":
-        return { x: dx, z: -dy };
-      case "-Y":
-        return { x: -dx, z: -dy };
-      case "+Z":
-        return { x: dx, y: -dy };
-      case "-Z":
-        return { x: -dx, y: -dy };
-    }
-  } else {
-    // Use continuous rotation - approximate for small deltas
-    const matrix = getRotationMatrix();
-    // For small deltas, we can approximate by applying inverse rotation
-    // This is a simplified approach - for more accuracy we'd need full matrix inverse
-    const scale = 1 / zoom;
-    return { x: dx * scale, y: -dy * scale, z: 0 };
+  switch (currentView) {
+    case "+X":
+      return { y: dx, z: -dy };
+    case "-X":
+      return { y: -dx, z: -dy };
+    case "+Y":
+      return { x: dx, z: -dy };
+    case "-Y":
+      return { x: -dx, z: -dy };
+    case "+Z":
+      return { x: dx, y: -dy };
+    case "-Z":
+      return { x: -dx, y: -dy };
   }
 }
 const SNAP_PIXELS = 10;
@@ -312,11 +196,6 @@ function distanceToSegment2D(p, a, b) {
 }
 
 function axisInfo(view) {
-  if (view === "continuous") {
-    // For continuous rotation, use a default that works with the rotation matrix
-    return { h: { axis: "x", sign: 1 }, v: { axis: "y", sign: -1 } };
-  }
-  
   switch (view) {
     case "+X":
       return { h: { axis: "y", sign: 1 }, v: { axis: "z", sign: -1 } };
@@ -644,33 +523,13 @@ function renderProperties() {
   });
 }
 
-// Update view button states based on current view
-function updateViewButtonStates() {
-  const discreteViews = ["+X", "-X", "+Y", "-Y", "+Z", "-Z"];
-  document.querySelectorAll(".view-btn").forEach((btn) => {
-    if (discreteViews.includes(currentView)) {
-      btn.classList.toggle("active", btn.dataset.view === currentView);
-    } else {
-      btn.classList.remove("active");
-    }
-  });
-}
-
 function render(updateProps = true) {
   const svg = document.getElementById("canvas");
   svg.innerHTML = "";
   const rect = svg.getBoundingClientRect();
   const cx = rect.width / 2 + panX;
   const cy = rect.height / 2 + panY;
-  
-  // Update current view display
-  if (currentView === "continuous") {
-    const rx = (rotationX * 180 / Math.PI).toFixed(1);
-    const ry = (rotationY * 180 / Math.PI).toFixed(1);
-    document.getElementById("current-view").textContent = `Rotated (X:${rx}°, Y:${ry}°)`;
-  } else {
-    document.getElementById("current-view").textContent = currentView;
-  }
+  document.getElementById("current-view").textContent = currentView;
 
   elements.forEach((el) => {
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -712,9 +571,7 @@ function render(updateProps = true) {
         shape.setAttribute("r", 4);
         shape.setAttribute("fill", "blue");
       } else if (el.type === "Plane") {
-        // Always render planes in continuous rotation mode
-        // In discrete mode, only render if normal matches view
-        if (currentView !== "continuous" && el.normal && el.normal !== currentView[1]) return;
+        if (el.normal && el.normal !== currentView[1]) return;
         const pts = planeCorners(el).map((p) => {
           const pr = projectPoint(p);
           return [cx + (pr.x || 0) * zoom, cy + (pr.y || 0) * zoom];
@@ -801,8 +658,6 @@ function render(updateProps = true) {
   if (updateProps) {
     renderProperties();
   }
-
-  updateViewButtonStates();
 }
 
 function addElement(type) {
@@ -828,7 +683,7 @@ function addElement(type) {
   } else if (type === "Plane") {
     base.length = 40;
     base.width = 40;
-    base.normal = currentView === "continuous" ? "Z" : currentView[1];
+    base.normal = currentView[1];
   } else if (type === "Solid") {
     base.width = 30;
     base.height = 30;
@@ -1048,12 +903,6 @@ function endDrag() {
 }
 
 function startPan(ev) {
-  // If shift is held, start rotation instead of panning
-  if (ev.shiftKey) {
-    startRotation(ev);
-    return;
-  }
-  
   panStartX = ev.clientX;
   panStartY = ev.clientY;
   panOrigX = panX;
