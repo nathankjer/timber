@@ -7,7 +7,7 @@ All internal calculations are performed in SI units, with conversion only for di
 """
 
 from dataclasses import dataclass
-from typing import Literal, Dict
+from typing import Dict, Literal
 
 # Unit system types
 UnitSystem = Literal["metric", "imperial"]
@@ -155,19 +155,25 @@ class UnitSystemManager:
         preferred_units = {
             "length": Units.METER if self.system == "metric" else Units.FOOT,
             "force": Units.KILONEWTON if self.system == "metric" else Units.POUND,
-            "moment": Units.KILONEWTON_METER
-            if self.system == "metric"
-            else Units.POUND_FOOT,
+            "moment": (
+                Units.KILONEWTON_METER if self.system == "metric" else Units.POUND_FOOT
+            ),
             "stress": Units.GIGAPASCAL if self.system == "metric" else Units.KSI,
-            "area": Units.SQUARE_MILLIMETER
-            if self.system == "metric"
-            else Units.SQUARE_INCH,
-            "moment_of_inertia": Units.MILLIMETER_TO_FOURTH
-            if self.system == "metric"
-            else Units.INCH_TO_FOURTH,
-            "acceleration": Units.METER_PER_SECOND_SQUARED
-            if self.system == "metric"
-            else Units.FOOT_PER_SECOND_SQUARED,
+            "area": (
+                Units.SQUARE_MILLIMETER
+                if self.system == "metric"
+                else Units.SQUARE_INCH
+            ),
+            "moment_of_inertia": (
+                Units.MILLIMETER_TO_FOURTH
+                if self.system == "metric"
+                else Units.INCH_TO_FOURTH
+            ),
+            "acceleration": (
+                Units.METER_PER_SECOND_SQUARED
+                if self.system == "metric"
+                else Units.FOOT_PER_SECOND_SQUARED
+            ),
         }
         return preferred_units[unit_type]
 

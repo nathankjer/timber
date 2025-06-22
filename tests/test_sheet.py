@@ -14,7 +14,7 @@ sys.path.append("src")
 from app import create_app
 from config import DevelopmentConfig
 from timber.extensions import db
-from timber.models import Sheet, Element, Action
+from timber.models import Action, Element, Sheet
 
 
 # --------------------------------------------------------------------------- #

@@ -4,7 +4,6 @@ from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
 from .extensions import db
-
 from .models import User
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")

@@ -6,7 +6,7 @@ sys.path.append("src")
 import app as app_module  # noqa: E402 – must come after sys.path tweak
 from app import create_app
 from config import DevelopmentConfig
-from timber import Point, Load, Member, Model, Support, solve
+from timber import Load, Member, Model, Point, Support, solve
 from timber.extensions import db
 from timber.models import Sheet, User
 

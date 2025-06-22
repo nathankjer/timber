@@ -5,21 +5,22 @@ removing the author-supplied baseline tests.
 pytest -q --cov=src/timber/engine.py
 """
 
-import sys
 import math
+import sys
+
 import numpy as np
 
 # Make sure "src" is importable, just like the baseline file does
 sys.path.append("src")
 
 # --- public API imports ---------------------------------------------------- #
-from timber import Point, Member, Load, Support, Model, solve
+from timber import Load, Member, Model, Point, Support, solve
 
 # --- internal helpers ------------------------------------------------------ #
 from timber.engine import (
+    _assemble_matrices,
     _local_stiffness,
     _transformation,
-    _assemble_matrices,
     solve_with_diagnostics,
 )
 

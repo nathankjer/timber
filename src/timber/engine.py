@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Tuple
+from typing import Dict, List, Tuple
+
 import numpy as np
-from .units import (
-    get_unit_manager,
-    format_length,
-    format_force,
-    format_moment
-)
+
+from .units import format_force, format_length, format_moment, get_unit_manager
 
 
 @dataclass

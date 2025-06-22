@@ -6,15 +6,15 @@ import sys
 from flask import Flask, jsonify, render_template, request
 from flask_login import current_user
 
-from timber import Point, Load, Member, Model, Support, solve_with_diagnostics
+from timber import Load, Member, Model, Point, Support, solve_with_diagnostics
 from timber.extensions import bcrypt, db, login_manager, migrate
 from timber.units import (
-    set_unit_system,
-    get_unit_system,
-    get_unit_conversion_info,
-    convert_to_display,
     convert_from_display,
+    convert_to_display,
     get_display_unit,
+    get_unit_conversion_info,
+    get_unit_system,
+    set_unit_system,
 )
 
 # -------------------------------------------------------------------
@@ -48,8 +48,8 @@ def create_app(config_object: object | str | None = None) -> Flask:
     login_manager.login_view = "auth.login"  # type: ignore
 
     from timber.auth import auth_bp
+    from timber.models import Sheet, User
     from timber.sheet import sheet_bp
-    from timber.models import User, Sheet
 
     @login_manager.user_loader
     def load_user(user_id: str) -> User | None:

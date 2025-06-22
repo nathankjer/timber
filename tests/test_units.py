@@ -6,31 +6,32 @@ for both metric and imperial units.
 """
 
 import sys
+
 import pytest
 
 sys.path.append("src")
 
 from timber.units import (
-    UnitSystemManager,
-    Units,
     UnitConversion,
-    set_unit_system,
-    get_unit_system,
-    get_unit_manager,
-    format_length,
-    format_force,
-    format_moment,
-    format_stress,
-    format_area,
-    format_moment_of_inertia,
+    Units,
+    UnitSystemManager,
     format_acceleration,
-    parse_length,
-    parse_force,
-    parse_moment,
-    parse_stress,
-    parse_area,
-    parse_moment_of_inertia,
+    format_area,
+    format_force,
+    format_length,
+    format_moment,
+    format_moment_of_inertia,
+    format_stress,
+    get_unit_manager,
+    get_unit_system,
     parse_acceleration,
+    parse_area,
+    parse_force,
+    parse_length,
+    parse_moment,
+    parse_moment_of_inertia,
+    parse_stress,
+    set_unit_system,
 )
 
 

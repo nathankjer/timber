@@ -12,8 +12,7 @@ import pytest
 from flask import Flask
 
 from timber.extensions import db
-from timber.models import User, Sheet, Element
-
+from timber.models import Element, Sheet, User
 
 # -----------------------------------------------------------------------------
 # Fixtures

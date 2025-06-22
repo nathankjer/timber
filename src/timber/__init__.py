@@ -1,10 +1,10 @@
 """Main timber package exposing calculation engine."""
 
 from .engine import (
-    Point,
     Load,
     Member,
     Model,
+    Point,
     Results,
     Support,
     solve,
