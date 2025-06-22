@@ -19,15 +19,15 @@ document.body.innerHTML = `
   <button id="new-sheet"></button>
   <i      id="edit-title"></i>
   <div class="btn-group">
-    <button class="view-btn" data-view="+X"></button>
-    <button class="view-btn" data-view="-X"></button>
+    <button class="view-btn" data-view="+Z"></button>
+    <button class="view-btn" data-view="-Z"></button>
   </div>
   <div class="btn-group">
     <button id="zoom-in"></button>
     <button id="zoom-out"></button>
     <button id="home-btn"></button>
   </div>
-  <span id="current-view">+X</span>
+  <span id="current-view">+Z</span>
   <svg    id="canvas"></svg>
   <select id="element-type"></select>
   <button id="add-btn"></button>

@@ -143,7 +143,7 @@ function resetPanZoom() {
   rotationX = 0;
   rotationY = 0;
   rotationZ = 0;
-  currentView = "+X";
+  currentView = "+Z";
   render();
 }
 const globalProps = { g: 9.81, units: "metric" };

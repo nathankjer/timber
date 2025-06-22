@@ -65,7 +65,7 @@ const {
  */
 function resetScene() {
   // Reset view and camera state
-  setCurrentView("+X");
+  setCurrentView("+Z");
   global.panX = 0;
   global.panY = 0;
   global.zoom = 1;
@@ -90,7 +90,7 @@ beforeEach(async () => {
   fetch.mockResponse("{}");
 
   // Reset view and camera
-  setCurrentView("+X");
+  setCurrentView("+Z");
   global.panX = 0;
   global.panY = 0;
   global.zoom = 1;
@@ -116,8 +116,8 @@ describe("geometry helpers (pure maths)", () => {
     expect(projectPoint(p)).toEqual(expected);
   });
 
-  test("unprojectDelta mirrors projectPoint along +X view", () => {
-    setCurrentView("+X");
+  test("unprojectDelta mirrors projectPoint along +Z view", () => {
+    setCurrentView("+Z");
     const res = unprojectDelta(5, 0); // dx ⇒ +y , dy ⇒ -z
     expect(res.y).toBeCloseTo(5);
     // JS distinguishes 0 and -0 when using Object.is, but for geometry any
@@ -127,7 +127,7 @@ describe("geometry helpers (pure maths)", () => {
 
   test("screenCoords maps origin to canvas centre", () => {
     // Canvas size is stubbed to 800×600 in setupJest.
-    setCurrentView("+X");
+    setCurrentView("+Z");
     const sc = screenCoords({ x: 0, y: 0, z: 0 });
     expect(sc).toMatchObject({ x: 400, y: 300 });
   });
@@ -176,8 +176,8 @@ describe("plane / solid helpers", () => {
     expect(rect.bottom - rect.top).toBeCloseTo(20 * global.zoom);
   });
 
-  test("solidScreenRect projects correct face dims in +X view", () => {
-    setCurrentView("+X");
+  test("solidScreenRect projects correct face dims in +Z view", () => {
+    setCurrentView("+Z");
     const el = { x: 0, y: 0, z: 0, width: 20, height: 30, depth: 40 };
     const rect = solidScreenRect(el);
     expect(rect.right - rect.left).toBeCloseTo(30 * global.zoom); // height along Y
@@ -469,7 +469,7 @@ describe("zoom and keyboard controls", () => {
     expect(projected).toHaveProperty('y');
     
     // Switch back to discrete mode
-    setCurrentView("+X");
-    expect(currentView).toBe("+X");
+    setCurrentView("+Z");
+    expect(currentView).toBe("+Z");
   });
 });
