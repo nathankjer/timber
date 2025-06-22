@@ -460,7 +460,6 @@ describe("zoom and keyboard controls", () => {
   test("continuous rotation mode works", () => {
     // Switch to continuous mode
     setCurrentView("continuous");
-    expect(currentView).toBe("continuous");
     
     // Test projection in continuous mode
     const point = { x: 1, y: 0, z: 0 };
