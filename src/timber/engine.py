@@ -81,11 +81,15 @@ class Member:
     E: UnitQuantity = field(default_factory=lambda: stress(200e9))
     A: UnitQuantity = field(default_factory=lambda: area(0.01))
     I: UnitQuantity = field(default_factory=lambda: moment_of_inertia(1e-6))
+    J: UnitQuantity = field(default_factory=lambda: moment_of_inertia(1e-6))
+    G: UnitQuantity = field(default_factory=lambda: stress(75e9))
 
     def __post_init__(self):
         self.E = _to_unit_quantity(self.E, "stress")
         self.A = _to_unit_quantity(self.A, "area")
         self.I = _to_unit_quantity(self.I, "moment_of_inertia")
+        self.J = _to_unit_quantity(self.J, "moment_of_inertia")
+        self.G = _to_unit_quantity(self.G, "stress")
 
 
 @dataclass
@@ -95,12 +99,18 @@ class Load:
     point: int  # Point ID
     fx: UnitQuantity = field(default_factory=lambda: force(0.0))
     fy: UnitQuantity = field(default_factory=lambda: force(0.0))
+    fz: UnitQuantity = field(default_factory=lambda: force(0.0))
+    mx: UnitQuantity = field(default_factory=lambda: moment(0.0))
+    my: UnitQuantity = field(default_factory=lambda: moment(0.0))
     mz: UnitQuantity = field(default_factory=lambda: moment(0.0))
     amount: UnitQuantity = field(default_factory=lambda: force(0.0))
 
     def __post_init__(self):
         self.fx = _to_unit_quantity(self.fx, "force")
         self.fy = _to_unit_quantity(self.fy, "force")
+        self.fz = _to_unit_quantity(self.fz, "force")
+        self.mx = _to_unit_quantity(self.mx, "moment")
+        self.my = _to_unit_quantity(self.my, "moment")
         self.mz = _to_unit_quantity(self.mz, "moment")
         self.amount = _to_unit_quantity(self.amount, "force")
 
@@ -112,6 +122,9 @@ class Support:
     point: int  # Point ID
     ux: bool = False
     uy: bool = False
+    uz: bool = False
+    rx: bool = False
+    ry: bool = False
     rz: bool = False
 
 
@@ -125,8 +138,8 @@ class Model:
 
 @dataclass
 class Results:
-    displacements: Dict[int, Tuple[float, float, float]]
-    reactions: Dict[int, Tuple[float, float, float]]
+    displacements: Dict[int, Tuple[float, float, float, float, float, float]]
+    reactions: Dict[int, Tuple[float, float, float, float, float, float]]
     unit_system: str = "metric"
 
     def format_displacement(self, point_id: int, component: str) -> str:
@@ -139,8 +152,14 @@ class Results:
             return format_length(disp[0])
         elif component == "uy":
             return format_length(disp[1])
+        elif component == "uz":
+            return format_length(disp[2])
+        elif component == "rx":
+            return f"{disp[3]:.6f} rad"
+        elif component == "ry":
+            return f"{disp[4]:.6f} rad"
         elif component == "rz":
-            return f"{disp[2]:.6f} rad"
+            return f"{disp[5]:.6f} rad"
         else:
             return "N/A"
 
@@ -154,67 +173,63 @@ class Results:
             return format_force(react[0])
         elif component == "fy":
             return format_force(react[1])
+        elif component == "fz":
+            return format_force(react[2])
+        elif component == "mx":
+            return format_moment(react[3])
+        elif component == "my":
+            return format_moment(react[4])
         elif component == "mz":
-            return format_moment(react[2])
+            return format_moment(react[5])
         else:
             return "N/A"
 
 
-def _local_stiffness(E: float, A: float, I: float, L: float) -> np.ndarray:
-    """Return the 6x6 local stiffness matrix for a 2D frame element."""
-    k = np.array(
-        [
-            [A * E / L, 0, 0, -A * E / L, 0, 0],
-            [
-                0,
-                12 * E * I / L**3,
-                6 * E * I / L**2,
-                0,
-                -12 * E * I / L**3,
-                6 * E * I / L**2,
-            ],
-            [
-                0,
-                6 * E * I / L**2,
-                4 * E * I / L,
-                0,
-                -6 * E * I / L**2,
-                2 * E * I / L,
-            ],
-            [-A * E / L, 0, 0, A * E / L, 0, 0],
-            [
-                0,
-                -12 * E * I / L**3,
-                -6 * E * I / L**2,
-                0,
-                12 * E * I / L**3,
-                -6 * E * I / L**2,
-            ],
-            [
-                0,
-                6 * E * I / L**2,
-                2 * E * I / L,
-                0,
-                -6 * E * I / L**2,
-                4 * E * I / L,
-            ],
-        ]
-    )
+def _local_stiffness(
+    E: float, A: float, Iz: float, Iy: float, G: float, J: float, L: float
+) -> np.ndarray:
+    """Return the 12x12 local stiffness matrix for a 3D frame element."""
+    k = np.zeros((12, 12))
+    k[0, 0] = k[6, 6] = A * E / L
+    k[0, 6] = k[6, 0] = -A * E / L
+
+    k[1, 1] = k[7, 7] = 12 * E * Iz / L**3
+    k[1, 7] = k[7, 1] = -12 * E * Iz / L**3
+    k[1, 5] = k[5, 1] = k[1, 11] = k[11, 1] = 6 * E * Iz / L**2
+    k[1, 5] = k[5, 1] = 6 * E * Iz / L**2
+    k[1, 11] = k[11, 1] = 6 * E * Iz / L**2
+    k[7, 5] = k[5, 7] = k[7, 11] = k[11, 7] = -6 * E * Iz / L**2
+
+    k[2, 2] = k[8, 8] = 12 * E * Iy / L**3
+    k[2, 8] = k[8, 2] = -12 * E * Iy / L**3
+    k[2, 4] = k[4, 2] = -6 * E * Iy / L**2
+    k[2, 10] = k[10, 2] = -6 * E * Iy / L**2
+    k[8, 4] = k[4, 8] = 6 * E * Iy / L**2
+    k[8, 10] = k[10, 8] = 6 * E * Iy / L**2
+
+    k[3, 3] = k[9, 9] = G * J / L
+    k[3, 9] = k[9, 3] = -G * J / L
+
+    k[4, 4] = k[10, 10] = 4 * E * Iy / L
+    k[4, 10] = k[10, 4] = 2 * E * Iy / L
+
+    k[5, 5] = k[11, 11] = 4 * E * Iz / L
+    k[5, 11] = k[11, 5] = 2 * E * Iz / L
     return k
 
 
 def _transformation(c: float, s: float) -> np.ndarray:
-    """Return the 6x6 transformation matrix for 2D."""
-    return np.array(
-        [
-            [c, s, 0, 0, 0, 0],
-            [-s, c, 0, 0, 0, 0],
-            [0, 0, 1, 0, 0, 0],
-            [0, 0, 0, c, s, 0],
-            [0, 0, 0, -s, c, 0],
-            [0, 0, 0, 0, 0, 1],
-        ]
-    )
+    """Return the 12x12 transformation matrix for 3D."""
+    # This is a simplified transformation matrix that assumes one of the
+    # principal axes of the member is aligned with the global Z-axis.
+    # A full 3D implementation would require a third vector to define orientation.
+    R = np.array([[c, s, 0], [-s, c, 0], [0, 0, 1]])
+    T = np.zeros((12, 12))
+    T[0:3, 0:3] = R
+    T[3:6, 3:6] = R
+    T[6:9, 6:9] = R
+    T[9:12, 9:12] = R
+    return T
 
 
 def _assemble_matrices(
@@ -222,7 +237,7 @@ def _assemble_matrices(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Build global stiffness and load matrices with boundary conditions."""
     n_points = len(model.points)
-    dof = n_points * 3
+    dof = n_points * 6
     K_full = np.zeros((dof, dof))
     F_ext = np.zeros(dof)
 
@@ -232,13 +247,13 @@ def _assemble_matrices(
     # Apply loads
     for load in model.loads:
         if load.point in point_id_to_idx:
-            idx = point_id_to_idx[load.point] * 3
-            fx = 0.0 if load.fx is None else float(load.fx.value)
-            fy = 0.0 if load.fy is None else float(load.fy.value)
-            mz = 0.0 if load.mz is None else float(load.mz.value)
-            F_ext[idx] += fx
-            F_ext[idx + 1] += fy
-            F_ext[idx + 2] += mz
+            idx = point_id_to_idx[load.point] * 6
+            F_ext[idx] += float(load.fx.value)
+            F_ext[idx + 1] += float(load.fy.value)
+            F_ext[idx + 2] += float(load.fz.value)
+            F_ext[idx + 3] += float(load.mx.value)
+            F_ext[idx + 4] += float(load.my.value)
+            F_ext[idx + 5] += float(load.mz.value)
 
     # Apply member stiffness
     for m in model.members:
@@ -254,21 +269,32 @@ def _assemble_matrices(
 
         dx = end_point.x.value - start_point.x.value
         dy = end_point.y.value - start_point.y.value
-        L = (dx**2 + dy**2) ** 0.5
+        dz = end_point.z.value - start_point.z.value
+        L = (dx**2 + dy**2 + dz**2) ** 0.5
         if L == 0:
             continue
         c = dx / L
         s = dy / L
-        k_local = _local_stiffness(m.E.value, m.A.value, m.I.value, L)
+        # For simplicity, this solver assumes members are oriented in the XY plane.
+        # A full 3D solver would require more complex transformations.
+        k_local = _local_stiffness(
+            m.E.value, m.A.value, m.I.value, m.I.value, m.G.value, m.J.value, L
+        )
         T = _transformation(c, s)
         k_global = T.T @ k_local @ T
         dof_map = [
-            start_idx * 3,
-            start_idx * 3 + 1,
-            start_idx * 3 + 2,
-            end_idx * 3,
-            end_idx * 3 + 1,
-            end_idx * 3 + 2,
+            start_idx * 6,
+            start_idx * 6 + 1,
+            start_idx * 6 + 2,
+            start_idx * 6 + 3,
+            start_idx * 6 + 4,
+            start_idx * 6 + 5,
+            end_idx * 6,
+            end_idx * 6 + 1,
+            end_idx * 6 + 2,
+            end_idx * 6 + 3,
+            end_idx * 6 + 4,
+            end_idx * 6 + 5,
         ]
         for i_local, gi in enumerate(dof_map):
             for j_local, gj in enumerate(dof_map):
@@ -280,25 +306,15 @@ def _assemble_matrices(
     # Apply boundary conditions
     for sup in model.supports:
         if sup.point in point_id_to_idx:
-            base = point_id_to_idx[sup.point] * 3
-            if sup.ux:
-                K[base, :] = 0
-                K[:, base] = 0
-                K[base, base] = 1
-                F[base] = 0
-            if sup.uy:
-                idx = base + 1
-                K[idx, :] = 0
-                K[:, idx] = 0
-                K[idx, idx] = 1
-                F[idx] = 0
-            if sup.rz:
-                idx = base + 2
-                K[idx, :] = 0
-                K[:, idx] = 0
-                K[idx, idx] = 1
-                F[idx] = 0
-
+            base = point_id_to_idx[sup.point] * 6
+            constraints = [sup.ux, sup.uy, sup.uz, sup.rx, sup.ry, sup.rz]
+            for i, constrained in enumerate(constraints):
+                if constrained:
+                    idx = base + i
+                    K[idx, :] = 0
+                    K[:, idx] = 0
+                    K[idx, idx] = 1
+                    F[idx] = 0
     return K_full, F_ext, K, F
 
 
@@ -314,15 +330,25 @@ def solve(model: Model) -> Results:
 
     # Reactions
     reactions_vec = K_full @ d - F_ext
-    displacements: Dict[int, Tuple[float, float, float]] = {}
-    reactions: Dict[int, Tuple[float, float, float]] = {}
+    displacements: Dict[int, Tuple[float, float, float, float, float, float]] = {}
+    reactions: Dict[int, Tuple[float, float, float, float, float, float]] = {}
 
     for i, point in enumerate(model.points):
-        displacements[point.id] = (d[i * 3], d[i * 3 + 1], d[i * 3 + 2])
+        displacements[point.id] = (
+            d[i * 6],
+            d[i * 6 + 1],
+            d[i * 6 + 2],
+            d[i * 6 + 3],
+            d[i * 6 + 4],
+            d[i * 6 + 5],
+        )
         reactions[point.id] = (
-            reactions_vec[i * 3],
-            reactions_vec[i * 3 + 1],
-            reactions_vec[i * 3 + 2],
+            reactions_vec[i * 6],
+            reactions_vec[i * 6 + 1],
+            reactions_vec[i * 6 + 2],
+            reactions_vec[i * 6 + 3],
+            reactions_vec[i * 6 + 4],
+            reactions_vec[i * 6 + 5],
         )
 
     unit_manager = get_unit_manager()
@@ -351,15 +377,25 @@ def solve_with_diagnostics(model: Model) -> tuple[Results, List[str]]:
         singular = True
 
     reactions_vec = K_full @ d - F_ext
-    displacements: Dict[int, Tuple[float, float, float]] = {}
-    reactions: Dict[int, Tuple[float, float, float]] = {}
+    displacements: Dict[int, Tuple[float, float, float, float, float, float]] = {}
+    reactions: Dict[int, Tuple[float, float, float, float, float, float]] = {}
 
     for i, point in enumerate(model.points):
-        displacements[point.id] = (d[i * 3], d[i * 3 + 1], d[i * 3 + 2])
+        displacements[point.id] = (
+            d[i * 6],
+            d[i * 6 + 1],
+            d[i * 6 + 2],
+            d[i * 6 + 3],
+            d[i * 6 + 4],
+            d[i * 6 + 5],
+        )
         reactions[point.id] = (
-            reactions_vec[i * 3],
-            reactions_vec[i * 3 + 1],
-            reactions_vec[i * 3 + 2],
+            reactions_vec[i * 6],
+            reactions_vec[i * 6 + 1],
+            reactions_vec[i * 6 + 2],
+            reactions_vec[i * 6 + 3],
+            reactions_vec[i * 6 + 4],
+            reactions_vec[i * 6 + 5],
         )
 
     unit_manager = get_unit_manager()

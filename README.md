@@ -55,7 +55,7 @@ _A single-page web application that lets **non-experts** solve and **visualise c
 ## Supported Use-Cases
 * Solve any first-year statics textbook problem _without prior statics knowledge_.
 * Model a barn wall from 2 × 4 lumber, then compute the forces to **tip-up** the assembly.
-* Iterate on 3-D assemblies of joints, beams, cables, plates, solids.
+* Iterate on 3-D assemblies of joints, beams, and plates.
 
 ---
 
@@ -65,9 +65,7 @@ _A single-page web application that lets **non-experts** solve and **visualise c
 |---------|------|-------------|-------------------|
 | **Joint** | 0-D | Mass-less node; connection point for other elements | position (x y z) |
 | **Member** | 1-D | Prismatic truss/beam element | mass, x y z, θx θy θz |
-| **Cable** | 1-D | Flexible, tension-only | same as Member |
 | **Plane** | 2-D | Rigid/elastic plate | mass, x y z, θx θy θz |
-| **Solid** | 3-D | Axis-aligned block | mass, x y z, θx θy θz |
 | **Load** | — | Force + moment on point/edge/face | Fx Fy Fz, Mx My Mz |
 | **Support** | — | Boundary condition | type (fixed, pinned, roller, ball, custom), stiffness |
 
@@ -214,7 +212,7 @@ Welcome to the complete reference for **timber**—the one-page statics solver a
 
 ## Key Capabilities
 
-* **Instant 3-D feedback** for joints, members, cables, plates, and solids.
+* **Instant 3-D feedback** for joints, members, and plates.
 * **Metric / Imperial** toggle without corrupting internal SI precision.
 * **Multi-sheet projects** stored per-user; every click is persisted and replay-able.
 * **Robust solver**—double precision, edge-case aware, extensible element classes.

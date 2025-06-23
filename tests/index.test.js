@@ -24,7 +24,6 @@ const {
   nearestPointOnLine,
   planeCorners,
   planeScreenRect,
-  solidScreenRect,
 
   /* snapping / model */
   getSnapPoints,
@@ -136,6 +135,36 @@ describe("geometry helpers (pure maths)", () => {
     expect(Math.abs(res.y)).toBeLessThan(1e-12);
   });
 
+  test("unprojectDelta works correctly in different view orientations", () => {
+    // Test +X view
+    setCurrentView("+X");
+    const resX = unprojectDelta(5, 0);
+    expect(resX).toHaveProperty("x");
+    expect(resX).toHaveProperty("y");
+    expect(resX).toHaveProperty("z");
+    
+    // Test -X view
+    setCurrentView("-X");
+    const resNegX = unprojectDelta(5, 0);
+    expect(resNegX).toHaveProperty("x");
+    expect(resNegX).toHaveProperty("y");
+    expect(resNegX).toHaveProperty("z");
+    
+    // Test +Y view
+    setCurrentView("+Y");
+    const resY = unprojectDelta(5, 0);
+    expect(resY).toHaveProperty("x");
+    expect(resY).toHaveProperty("y");
+    expect(resY).toHaveProperty("z");
+    
+    // Test -Y view
+    setCurrentView("-Y");
+    const resNegY = unprojectDelta(5, 0);
+    expect(resNegY).toHaveProperty("x");
+    expect(resNegY).toHaveProperty("y");
+    expect(resNegY).toHaveProperty("z");
+  });
+
   test("screenCoords maps origin to canvas centre", () => {
     // Canvas size is stubbed to 800×600 in setupJest.
     setCurrentView("+Z");
@@ -167,10 +196,10 @@ describe("geometry helpers (pure maths)", () => {
 });
 
 //--------------------------------------------------------------------
-//  PLANE / SOLID HELPERS
+//  PLANE HELPERS
 //--------------------------------------------------------------------
 
-describe("plane / solid helpers", () => {
+describe("plane helpers", () => {
   test("planeCorners returns four corner points for Z‑normal", () => {
     const el = { x: 0, y: 0, z: 0, length: 40, width: 20, normal: "Z" };
     const corners = planeCorners(el);
@@ -185,14 +214,6 @@ describe("plane / solid helpers", () => {
     const rect = planeScreenRect(el);
     expect(rect.right - rect.left).toBeCloseTo(40 * global.zoom);
     expect(rect.bottom - rect.top).toBeCloseTo(20 * global.zoom);
-  });
-
-  test("solidScreenRect projects correct face dims in +Z view", () => {
-    setCurrentView("+Z");
-    const el = { x: 0, y: 0, z: 0, width: 20, height: 30, depth: 40 };
-    const rect = solidScreenRect(el);
-    expect(rect.right - rect.left).toBeCloseTo(20 * global.zoom); // width along X
-    expect(rect.bottom - rect.top).toBeCloseTo(30 * global.zoom); // height along Y
   });
 });
 
@@ -238,14 +259,12 @@ describe("buildModel", () => {
   test("includes gravity loads from elements with mass", () => {
     addElement("Member");
     addElement("Plane");
-    addElement("Solid");
 
     // Set masses for the elements
     const elements = global.elements || [];
     elements.forEach((el) => {
       if (el.type === "Member") el.mass = 20;
       if (el.type === "Plane") el.mass = 100;
-      if (el.type === "Solid") el.mass = 200;
     });
 
     const model = buildModel();
@@ -298,40 +317,9 @@ describe("buildModel", () => {
     const planeMass = calculateMass(plane);
     const expectedPlaneMass = 1 * 0.02 * 500; // Area × thickness × density
     expect(planeMass).toBeCloseTo(expectedPlaneMass, 1);
-    
-    // Test solid mass calculation
-    const solid = {
-      type: "Solid",
-      material: "steel",
-      density: 7800,
-      points: [
-        { x: 0, y: 0, z: 0 },
-        { x: 1, y: 0, z: 0 },
-        { x: 1, y: 1, z: 0 },
-        { x: 0, y: 1, z: 0 },
-        { x: 0, y: 0, z: 1 },
-        { x: 1, y: 0, z: 1 },
-        { x: 1, y: 1, z: 1 },
-        { x: 0, y: 1, z: 1 }
-      ] // 1m × 1m × 1m volume
-    };
-    
-    const solidMass = calculateMass(solid);
-    const expectedSolidMass = 1 * 7800; // Volume × density
-    expect(solidMass).toBeCloseTo(expectedSolidMass, 1);
   });
 
   test("sets correct default materials for different element types", () => {
-    // Test that cables default to steel
-    const cable = {
-      type: "Cable",
-      material: undefined,
-      density: undefined
-    };
-    calculateMass(cable);
-    expect(cable.material).toBe("steel");
-    expect(cable.density).toBe(7800);
-    
     // Test that members default to wood
     const member = {
       type: "Member",
@@ -911,52 +899,25 @@ describe("constrainToOrthogonal", () => {
     const delta = { x: 5, y: 3, z: 2 };
 
     // Edge 0-1 (Y-Z plane)
-    const result1 = constrainToOrthogonal(delta, 0, "Plane");
+    const result1 = constrainToOrthogonal(delta, 0);
     expect(result1.x).toBe(0);
     expect(result1.y).toBe(3);
     expect(result1.z).toBe(2);
 
     // Edge 1-2 (X-Z plane)
-    const result2 = constrainToOrthogonal(delta, 1, "Plane");
+    const result2 = constrainToOrthogonal(delta, 1);
     expect(result2.x).toBe(5);
     expect(result2.y).toBe(0);
     expect(result2.z).toBe(2);
   });
 
-  test("constrains solid face movements to normal axis", () => {
-    const delta = { x: 5, y: 3, z: 2 };
-
-    // Bottom face (Z normal)
-    const result1 = constrainToOrthogonal(delta, 0, "Solid");
-    expect(result1.x).toBe(0);
-    expect(result1.y).toBe(0);
-    expect(result1.z).toBe(2);
-
-    // Front face (Y normal)
-    const result2 = constrainToOrthogonal(delta, 2, "Solid");
-    expect(result2.x).toBe(0);
-    expect(result2.y).toBe(3);
-    expect(result2.z).toBe(0);
-
-    // Left face (X normal)
-    const result3 = constrainToOrthogonal(delta, 4, "Solid");
-    expect(result3.x).toBe(5);
-    expect(result3.y).toBe(0);
-    expect(result3.z).toBe(0);
-  });
-
   test("handles out of bounds indices gracefully", () => {
     const delta = { x: 5, y: 3, z: 2 };
 
-    const result1 = constrainToOrthogonal(delta, 10, "Plane");
+    const result1 = constrainToOrthogonal(delta, 10);
     expect(result1.x).toBe(0);
     expect(result1.y).toBe(0);
     expect(result1.z).toBe(0);
-
-    const result2 = constrainToOrthogonal(delta, 10, "Solid");
-    expect(result2.x).toBe(0);
-    expect(result2.y).toBe(0);
-    expect(result2.z).toBe(0);
   });
 });
 

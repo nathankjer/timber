@@ -390,11 +390,38 @@ function projectPoint(p) {
 }
 
 function unprojectDelta(dx, dy) {
-  // Always use continuous rotation - approximate for small deltas
-  // For small deltas, we can approximate by applying inverse rotation
-  // This is a simplified approach - for more accuracy we'd need full matrix inverse
+  // Convert screen deltas to world coordinates using the inverse rotation matrix
   const scale = 1 / globalThis.zoom;
-  return { x: dx * scale, y: -dy * scale, z: 0 };
+  
+  // Get the rotation matrix
+  const matrix = getRotationMatrix();
+  
+  // For small deltas, we can approximate the inverse transformation
+  // by applying the inverse rotation to the screen delta
+  // Screen coordinates: x increases right, y increases down
+  // We need to convert this to world coordinates
+  
+  // The screen delta in world space (before rotation)
+  const worldDelta = {
+    x: dx * scale,
+    y: -dy * scale, // Screen Y is inverted
+    z: 0
+  };
+  
+  // Apply inverse rotation (transpose of rotation matrix for orthogonal matrices)
+  const invMatrix = [
+    [matrix[0][0], matrix[1][0], matrix[2][0]],
+    [matrix[0][1], matrix[1][1], matrix[2][1]],
+    [matrix[0][2], matrix[1][2], matrix[2][2]]
+  ];
+  
+  const result = {
+    x: invMatrix[0][0] * worldDelta.x + invMatrix[0][1] * worldDelta.y + invMatrix[0][2] * worldDelta.z,
+    y: invMatrix[1][0] * worldDelta.x + invMatrix[1][1] * worldDelta.y + invMatrix[1][2] * worldDelta.z,
+    z: invMatrix[2][0] * worldDelta.x + invMatrix[2][1] * worldDelta.y + invMatrix[2][2] * worldDelta.z
+  };
+  
+  return result;
 }
 const SNAP_PIXELS = 20;
 
@@ -494,19 +521,6 @@ function planeScreenRect(el) {
   };
 }
 
-function solidScreenRect(el) {
-  const info = axisInfo(currentView);
-  const h = (el[axisDims[info.h.axis]] ?? 30) * globalThis.zoom;
-  const v = (el[axisDims[info.v.axis]] ?? 30) * globalThis.zoom;
-  const c = screenCoords(el);
-  return {
-    left: c.x - h / 2,
-    right: c.x + h / 2,
-    top: c.y - v / 2,
-    bottom: c.y + v / 2,
-  };
-}
-
 function nearestPointOnLine(p, a, b) {
   const ab = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
   const ap = { x: p.x - a.x, y: p.y - a.y, z: p.z - a.z };
@@ -534,12 +548,12 @@ function getSnapPoints(ignoreId) {
         e.points.forEach((p) => {
           pts.push({ ...p, kind: "Load" });
         });
-      } else if (e.type === "Member" || e.type === "Cable") {
+      } else if (e.type === "Member") {
         e.points.forEach((p) => {
           pts.push({ ...p, kind: "End" });
         });
 
-        // Add midpoint of member/cable
+        // Add midpoint of member
         if (e.points.length >= 2) {
           const midX = (e.points[0].x + e.points[1].x) / 2;
           const midY = (e.points[0].y + e.points[1].y) / 2;
@@ -574,66 +588,6 @@ function getSnapPoints(ignoreId) {
         const centerZ =
           e.points.reduce((sum, p) => sum + p.z, 0) / e.points.length;
         pts.push({ x: centerX, y: centerY, z: centerZ, kind: "PlaneCenter" });
-      } else if (e.type === "Solid") {
-        // Point-based solid
-        e.points.forEach((p) => {
-          pts.push({ ...p, kind: "SolidCorner" });
-        });
-
-        // Add edge midpoints
-        const edges = [
-          [0, 1],
-          [1, 2],
-          [2, 3],
-          [3, 0], // bottom face
-          [4, 5],
-          [5, 6],
-          [6, 7],
-          [7, 4], // top face
-          [0, 4],
-          [1, 5],
-          [2, 6],
-          [3, 7], // connecting edges
-        ];
-        edges.forEach(([i, j]) => {
-          const midX = (e.points[i].x + e.points[j].x) / 2;
-          const midY = (e.points[i].y + e.points[j].y) / 2;
-          const midZ = (e.points[i].z + e.points[j].z) / 2;
-          pts.push({ x: midX, y: midY, z: midZ, kind: "SolidEdgeMid" });
-        });
-
-        // Add face centers
-        const faces = [
-          [0, 1, 2, 3], // bottom face
-          [4, 5, 6, 7], // top face
-          [0, 1, 5, 4], // front face
-          [2, 3, 7, 6], // back face
-          [0, 3, 7, 4], // left face
-          [1, 2, 6, 5], // right face
-        ];
-        faces.forEach((face) => {
-          const centerX =
-            face.reduce((sum, i) => sum + e.points[i].x, 0) / face.length;
-          const centerY =
-            face.reduce((sum, i) => sum + e.points[i].y, 0) / face.length;
-          const centerZ =
-            face.reduce((sum, i) => sum + e.points[i].z, 0) / face.length;
-          pts.push({
-            x: centerX,
-            y: centerY,
-            z: centerZ,
-            kind: "SolidFaceCenter",
-          });
-        });
-
-        // Add center of solid
-        const centerX =
-          e.points.reduce((sum, p) => sum + p.x, 0) / e.points.length;
-        const centerY =
-          e.points.reduce((sum, p) => sum + p.y, 0) / e.points.length;
-        const centerZ =
-          e.points.reduce((sum, p) => sum + p.z, 0) / e.points.length;
-        pts.push({ x: centerX, y: centerY, z: centerZ, kind: "SolidCenter" });
       }
     } else {
       // Legacy fallback for any remaining elements
@@ -647,7 +601,7 @@ function getSnapPoints(ignoreId) {
           z: e.z2 ?? e.z,
           kind: "Load",
         });
-      } else if (e.type === "Member" || e.type === "Cable") {
+      } else if (e.type === "Member") {
         pts.push({ x: e.x, y: e.y, z: e.z, kind: "End" });
         pts.push({
           x: e.x2 ?? e.x,
@@ -656,7 +610,7 @@ function getSnapPoints(ignoreId) {
           kind: "End",
         });
 
-        // Add midpoint of member/cable
+        // Add midpoint of member
         const midX = (e.x + (e.x2 ?? e.x)) / 2;
         const midY = (e.y + (e.y2 ?? e.y)) / 2;
         const midZ = (e.z + (e.z2 ?? e.z)) / 2;
@@ -665,30 +619,6 @@ function getSnapPoints(ignoreId) {
         // Legacy dimension-based plane
         const corners = planeCorners(e);
         corners.forEach((c) => pts.push({ ...c, kind: "PlaneCorner" }));
-      } else if (e.type === "Solid") {
-        // Legacy dimension-based solid
-        const s = 15;
-        [-s, s].forEach((dx) =>
-          [-s, s].forEach((dy) =>
-            [-s, s].forEach((dz) =>
-              pts.push({
-                x: e.x + dx,
-                y: e.y + dy,
-                z: e.z + dz,
-                kind: "SolidCorner",
-              }),
-            ),
-          ),
-        );
-        [-s, s].forEach((dx) =>
-          pts.push({ x: e.x + dx, y: e.y, z: e.z, kind: "FaceCenter" }),
-        );
-        [-s, s].forEach((dy) =>
-          pts.push({ x: e.x, y: e.y + dy, z: e.z, kind: "FaceCenter" }),
-        );
-        [-s, s].forEach((dz) =>
-          pts.push({ x: e.x, y: e.y, z: e.z + dz, kind: "FaceCenter" }),
-        );
       }
     }
   });
@@ -701,7 +631,7 @@ function getSnapLines(ignoreId) {
     if (e.id === ignoreId) return;
     if (e.points && e.points.length >= 2) {
       // All elements now use points array
-      if (e.type === "Member" || e.type === "Cable" || e.type === "Load") {
+      if (e.type === "Member"|| e.type === "Load") {
         lines.push({
           p1: { x: e.points[0].x, y: e.points[0].y, z: e.points[0].z },
           p2: { x: e.points[1].x, y: e.points[1].y, z: e.points[1].z },
@@ -709,7 +639,7 @@ function getSnapLines(ignoreId) {
       }
     } else {
       // Legacy fallback for any remaining elements
-      if (e.type === "Member" || e.type === "Cable" || e.type === "Load") {
+      if (e.type === "Member" || e.type === "Load") {
         lines.push({
           p1: { x: e.x, y: e.y, z: e.z },
           p2: { x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z },
@@ -752,8 +682,8 @@ function applySnapping(el) {
 
   if (el.points) {
     // All elements now use points array
-    if (el.type === "Plane" || el.type === "Solid") {
-      // For planes and solids, maintain object integrity by moving the entire object
+    if (el.type === "Plane") {
+      // For planes, maintain object integrity by moving the entire object
       // Find the closest snap point to any of the object's points
       let bestSnap = null;
       let bestDist = SNAP_PIXELS;
@@ -795,7 +725,7 @@ function applySnapping(el) {
         });
       }
     } else {
-      // For other elements (Member, Cable, Load, Support), snap each point individually
+      // For other elements (Member, Load, Support), snap each point individually
       el.points.forEach((p) => snapObj(p));
     }
   } else {
@@ -813,7 +743,7 @@ function applySnapping(el) {
       el.x2 = tip.x;
       el.y2 = tip.y;
       el.z2 = tip.z;
-    } else if (el.type === "Member" || el.type === "Cable") {
+    } else if (el.type === "Member") {
       const p1 = { x: el.x, y: el.y, z: el.z };
       const p2 = { x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z };
       snapObj(p1);
@@ -824,7 +754,7 @@ function applySnapping(el) {
       el.x2 = p2.x;
       el.y2 = p2.y;
       el.z2 = p2.z;
-    } else if (el.type === "Plane" || el.type === "Solid") {
+    } else if (el.type === "Plane") {
       snapObj(el);
     } else {
       snapObj(el);
@@ -951,27 +881,18 @@ async function renderProperties(force = false) {
         }
       }
 
-      if (el.type === "Member" || el.type === "Cable") {
+      if (el.type === "Member") {
         // Material selector for Young's Modulus (E)
-        if (!el.material) el.material = el.type === "Cable" ? "steel" : "wood";
+        if (!el.material) el.material = "wood";
         const materialDiv = document.createElement("div");
         materialDiv.className = "mb-2";
-        if (el.type === "Cable") {
-          materialDiv.innerHTML = `
-            <label class='form-label'>Material</label>
-            <select id='material-type' class='form-select form-select-sm w-auto d-inline'>
-              <option value='steel' selected>Steel</option>
-            </select>
-          `;
-        } else {
-          materialDiv.innerHTML = `
-            <label class='form-label'>Material</label>
-            <select id='material-type' class='form-select form-select-sm w-auto d-inline'>
-              <option value='wood' ${el.material === "wood" ? "selected" : ""}>Wood</option>
-              <option value='steel' ${el.material === "steel" ? "selected" : ""}>Steel</option>
-            </select>
-          `;
-        }
+        materialDiv.innerHTML = `
+          <label class='form-label'>Material</label>
+          <select id='material-type' class='form-select form-select-sm w-auto d-inline'>
+            <option value='wood' ${el.material === "wood" ? "selected" : ""}>Wood</option>
+            <option value='steel' ${el.material === "steel" ? "selected" : ""}>Steel</option>
+          </select>
+        `;
         form.appendChild(materialDiv);
         const matSel = materialDiv.querySelector("#material-type");
         el._propertyInputs["material"] = matSel;
@@ -1119,65 +1040,6 @@ async function renderProperties(force = false) {
           </div>`;
         el._propertyInputs["mass"] = massDiv.querySelector("input");
         form.appendChild(massDiv);
-      } else if (el.type === "Solid") {
-        if (!el.material) el.material = "wood";
-        const materialDiv = document.createElement("div");
-        materialDiv.className = "mb-2";
-        materialDiv.innerHTML = `
-          <label class='form-label'>Material</label>
-          <select id='material-type' class='form-select form-select-sm w-auto d-inline'>
-            <option value='wood' ${el.material === "wood" ? "selected" : ""}>Wood</option>
-            <option value='steel' ${el.material === "steel" ? "selected" : ""}>Steel</option>
-          </select>
-        `;
-        form.appendChild(materialDiv);
-        const matSel = materialDiv.querySelector("#material-type");
-        el._propertyInputs["material"] = matSel;
-        matSel.addEventListener("change", async (ev) => {
-          el.material = ev.target.value;
-          if (el.material === "wood") {
-            el.E = 10e9;
-            el.density = 500;
-          } else if (el.material === "steel") {
-            el.E = 200e9;
-            el.density = 7800;
-          }
-          el.mass = calculateMass(el);
-          updatePropertyFieldValues();
-          saveState();
-        });
-        if (el.material === "wood") {
-          el.E = 10e9;
-          el.density = 500;
-        } else if (el.material === "steel") {
-          el.E = 200e9;
-          el.density = 7800;
-        }
-        if (!el.mass) {
-          el.mass = calculateMass(el);
-        }
-        // Density
-        const density_conv = await convertValue(el.density, "density", "to_display");
-        const densityDiv = document.createElement("div");
-        densityDiv.className = "mb-2";
-        densityDiv.innerHTML = `<label class='form-label'>Density</label>
-          <div class='input-group input-group-sm'>
-            <input class='form-control' type='text' value='${density_conv.value.toFixed(1)}' disabled>
-            <span class='input-group-text'>${density_conv.symbol}</span>
-          </div>`;
-        el._propertyInputs["density"] = densityDiv.querySelector("input");
-        form.appendChild(densityDiv);
-        // Mass (calculated)
-        const mass_conv = await convertValue(el.mass, "mass", "to_display");
-        const massDiv = document.createElement("div");
-        massDiv.className = "mb-2";
-        massDiv.innerHTML = `<label class='form-label'>Mass (calculated)</label>
-          <div class='input-group input-group-sm'>
-            <input class='form-control' type='text' value='${mass_conv.value.toFixed(3)}' disabled>
-            <span class='input-group-text'>${mass_conv.symbol}</span>
-          </div>`;
-        el._propertyInputs["mass"] = massDiv.querySelector("input");
-        form.appendChild(massDiv);
       }
       pane.appendChild(form);
       document.getElementById("delete-btn").disabled = false;
@@ -1269,7 +1131,7 @@ async function updatePropertyFieldValues() {
     const mass_conv = await convertValue(el.mass, "mass", "to_display");
     el._propertyInputs["mass"].value = mass_conv.value.toFixed(3);
   }
-  // Always update area field, even when it has focus, since area changes affect mass for members/cables
+  // Always update area field, even when it has focus, since area changes affect mass for members
   if (el._propertyInputs["A"]) {
     const area_conv = await convertValue(el.A, "area", "to_display");
     el._propertyInputs["A"].value = area_conv.value.toFixed(3);
@@ -1380,7 +1242,7 @@ async function render(updateProps = true) {
         if (!pointMap.has(key)) {
           pointMap.set(key, { x: el.x, y: el.y, z: el.z, type: "Load" });
         }
-      } else if (el.type === "Member" || el.type === "Cable") {
+      } else if (el.type === "Member") {
         const key1 = `${el.x.toFixed(6)},${el.y.toFixed(6)},${el.z.toFixed(6)}`;
         const key2 = `${(el.x2 ?? el.x).toFixed(6)},${(el.y2 ?? el.y).toFixed(6)},${(el.z2 ?? el.z).toFixed(6)}`;
         if (!pointMap.has(key1)) {
@@ -1394,7 +1256,7 @@ async function render(updateProps = true) {
             type: "Member",
           });
         }
-      } else if (el.type === "Plane" || el.type === "Solid") {
+      } else if (el.type === "Plane") {
         (el.points || []).forEach((p) => {
           const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
           if (!pointMap.has(key)) {
@@ -1435,7 +1297,7 @@ async function render(updateProps = true) {
     });
 
     let shape;
-    if (el.type === "Member" || el.type === "Cable") {
+    if (el.type === "Member") {
       const p1 = projectPoint(el.points[0]);
       const p2 = projectPoint(el.points[1]);
       shape = document.createElementNS("http://www.w3.org/2000/svg", "line");
@@ -1445,8 +1307,7 @@ async function render(updateProps = true) {
       shape.setAttribute("y2", cy + (p2.y || 0) * globalThis.zoom);
       shape.setAttribute("stroke", "blue");
       shape.setAttribute("stroke-width", 2);
-      if (el.type === "Cable") shape.setAttribute("stroke-dasharray", "4 2");
-    } else if (el.type === "Load") {
+    }else if (el.type === "Load") {
       // Treat loads like members with draggable endpoints
       const p1 = projectPoint(el.points[0]);
       const p2 = projectPoint(el.points[1]);
@@ -1494,68 +1355,6 @@ async function render(updateProps = true) {
       shape.setAttribute("points", pts.map((pt) => pt.join(",")).join(" "));
       shape.setAttribute("fill", "rgba(0,0,255,0.2)");
       shape.setAttribute("stroke", "blue");
-    } else if (el.type === "Solid") {
-      const vertices = el.points;
-      const screen_vertices = vertices.map((p) => screenCoords(p));
-
-      // Define the 6 faces of the cube
-      const faces = [
-        [0, 1, 2, 3], // bottom face
-        [4, 5, 6, 7], // top face
-        [0, 1, 5, 4], // front face
-        [2, 3, 7, 6], // back face
-        [0, 3, 7, 4], // left face
-        [1, 2, 6, 5], // right face
-      ];
-
-      // Render each face as a transparent polygon
-      faces.forEach((face) => {
-        const facePoints = face.map((i) => screen_vertices[i]);
-        const shape = document.createElementNS(
-          "http://www.w3.org/2000/svg",
-          "polygon",
-        );
-        shape.setAttribute(
-          "points",
-          facePoints.map((p) => `${p.x},${p.y}`).join(" "),
-        );
-        shape.setAttribute("fill", "rgba(0,0,255,0.3)");
-        shape.setAttribute("stroke", "blue");
-        shape.setAttribute("stroke-width", 1);
-        g.appendChild(shape);
-      });
-
-      // Also render edges for better definition
-      const edges = [
-        [0, 1],
-        [1, 2],
-        [2, 3],
-        [3, 0], // bottom face
-        [4, 5],
-        [5, 6],
-        [6, 7],
-        [7, 4], // top face
-        [0, 4],
-        [1, 5],
-        [2, 6],
-        [3, 7], // connecting edges
-      ];
-
-      edges.forEach((edge) => {
-        const p1 = screen_vertices[edge[0]];
-        const p2 = screen_vertices[edge[1]];
-        const line = document.createElementNS(
-          "http://www.w3.org/2000/svg",
-          "line",
-        );
-        line.setAttribute("x1", p1.x);
-        line.setAttribute("y1", p1.y);
-        line.setAttribute("x2", p2.x);
-        line.setAttribute("y2", p2.y);
-        line.setAttribute("stroke", "blue");
-        line.setAttribute("stroke-width", 1);
-        g.appendChild(line);
-      });
     } else if (el.type === "Support") {
       shape = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
       const p = projectPoint(el.points[0]);
@@ -1596,7 +1395,7 @@ async function addElement(type) {
     y: center.y || 0,
     z: center.z || 0,
   };
-  if (type === "Member" || type === "Cable") {
+  if (type === "Member") {
     const dir = unprojectDelta(40, 0);
     const endX = base.x + (dir.x || 0);
     const endY = base.y + (dir.y || 0);
@@ -1610,8 +1409,8 @@ async function addElement(type) {
     base.A = 0.01;
     base.I = 1e-6;
     // Set material and density based on type
-    base.material = type === "Cable" ? "steel" : "wood";
-    base.density = type === "Cable" ? 7800 : 500;
+    base.material = "wood";
+    base.density = 500;
     // Calculate mass dynamically
     base.mass = calculateMass(base);
   } else if (type === "Plane") {
@@ -1670,27 +1469,6 @@ async function addElement(type) {
     base.thickness = 0.01; // Default 10mm thickness
     // Calculate mass dynamically
     base.mass = calculateMass(base);
-  } else if (type === "Solid") {
-    // Create solid with 8 corner points - orthogonal to standard axes
-    const w = 30 / 2; // half width
-    const h = 30 / 2; // half height
-    const d = 30 / 2; // half depth
-
-    base.points = [
-      { x: base.x - w, y: base.y - h, z: base.z - d }, // 0: bottom-back-left
-      { x: base.x + w, y: base.y - h, z: base.z - d }, // 1: bottom-back-right
-      { x: base.x + w, y: base.y + h, z: base.z - d }, // 2: bottom-front-right
-      { x: base.x - w, y: base.y + h, z: base.z - d }, // 3: bottom-front-left
-      { x: base.x - w, y: base.y - h, z: base.z + d }, // 4: top-back-left
-      { x: base.x + w, y: base.y - h, z: base.z + d }, // 5: top-back-right
-      { x: base.x + w, y: base.y + h, z: base.z + d }, // 6: top-front-right
-      { x: base.x - w, y: base.y + h, z: base.z + d }, // 7: top-front-left
-    ];
-    // Set material and density
-    base.material = "wood";
-    base.density = 500;
-    // Calculate mass dynamically
-    base.mass = calculateMass(base);
   } else if (type === "Load") {
     const dir = unprojectDelta(0, -20);
     const endX = base.x + (dir.x || 0);
@@ -1740,7 +1518,7 @@ function startDrag(ev) {
   dragStartY = ev.clientY;
   dragOrig = JSON.parse(JSON.stringify(el));
   dragMode = "body";
-  if (el.type === "Member" || el.type === "Cable") {
+  if (el.type === "Member") {
     const p1 = screenCoords(el.points[0]);
     const p2 = screenCoords(el.points[1]);
     if (distanceScreen({ x: mx, y: my }, p1) < 16) dragMode = "start";
@@ -1754,7 +1532,7 @@ function startDrag(ev) {
     else if (distanceScreen({ x: mx, y: my }, p2) < 16) dragMode = "end";
     else if (distanceToSegment2D({ x: mx, y: my }, p1, p2) < 6)
       dragMode = "body";
-  } else if (el.type === "Plane" || el.type === "Solid") {
+  } else if (el.type === "Plane") {
     // Check for edge/face dragging instead of individual points
     if (el.type === "Plane") {
       // For planes, check for edge dragging first
@@ -1785,64 +1563,13 @@ function startDrag(ev) {
       if (dragMode === "body") {
         dragMode = "face";
       }
-    } else if (el.type === "Solid") {
-      // For solids, check if we're in an orthographic view
-      const isOrthographic = ["+X", "-X", "+Y", "-Y", "+Z", "-Z"].includes(currentView);
-      
-      if (isOrthographic) {
-        // In orthographic view, face drag moves the whole solid
-        dragMode = "body";
-      } else {
-        // In non-orthographic view, face drag resizes the solid
-        const vertices = solidVertices(el);
-        const screen_vertices = vertices.map((p) => screenCoords(p));
-
-        // Define the 6 faces of the cube
-        const faces = [
-          [0, 1, 2, 3], // bottom face
-          [4, 5, 6, 7], // top face
-          [0, 1, 5, 4], // front face
-          [2, 3, 7, 6], // back face
-          [0, 3, 7, 4], // left face
-          [1, 2, 6, 5], // right face
-        ];
-
-        // Find visible faces (faces that are facing the camera)
-        const visibleFaces = [];
-        for (let i = 0; i < faces.length; i++) {
-          const face = faces[i];
-          const facePoints = face.map((j) => screen_vertices[j]);
-          
-          // Check if mouse is inside the face polygon
-          if (isPointInPolygon({ x: mx, y: my }, facePoints)) {
-            // Simple visibility check: if the face is large enough to be visible
-            const area = Math.abs(
-              (facePoints[1].x - facePoints[0].x) * (facePoints[2].y - facePoints[0].y) -
-              (facePoints[2].x - facePoints[0].x) * (facePoints[1].y - facePoints[0].y)
-            ) / 2;
-            
-            if (area > 10) { // Minimum visible area
-              visibleFaces.push(i);
-            }
-          }
-        }
-
-        // If exactly one visible face is clicked, drag that face
-        if (visibleFaces.length === 1) {
-          dragMode = `face-${visibleFaces[0]}`;
-        } else {
-          // If multiple faces or no faces, it's a body drag
-          dragMode = "body";
-        }
-      }
     }
 
     // If no edge/face was clicked, allow body drag
     if (dragMode === "body") {
       // Check for edge dragging for legacy dimension-based elements
       if (!el.points) {
-        const rect =
-          el.type === "Plane" ? planeScreenRect(el) : solidScreenRect(el);
+        const rect = planeScreenRect(el);
         const edgeThreshold = 8;
 
         // Check if mouse is near edges for resizing
@@ -1868,7 +1595,7 @@ async function onDrag(ev) {
   const dx = (ev.clientX - dragStartX) / globalThis.zoom;
   const dy = (ev.clientY - dragStartY) / globalThis.zoom;
   const delta = unprojectDelta(dx, dy);
-  if (el.type === "Member" || el.type === "Cable") {
+  if (el.type === "Member") {
     if (dragMode === "start") {
       el.points[0].x = dragOrig.points[0].x + (delta.x || 0);
       el.points[0].y = dragOrig.points[0].y + (delta.y || 0);
@@ -1973,83 +1700,6 @@ async function onDrag(ev) {
         el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
       } else if (dragMode === "bottom") {
         el.width = Math.max(1, dragOrig.width + dv);
-        el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
-      } else {
-        ["x", "y", "z"].forEach((k) => {
-          if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k];
-        });
-      }
-    }
-  } else if (el.type === "Solid") {
-    if (el.points) {
-      // Point-based solid with face dragging
-      if (dragMode.startsWith("face-")) {
-        const faceIndex = parseInt(dragMode.split("-")[1], 10);
-        const faces = [
-          [0, 1, 2, 3], // bottom face
-          [4, 5, 6, 7], // top face
-          [0, 1, 5, 4], // front face
-          [2, 3, 7, 6], // back face
-          [0, 3, 7, 4], // left face
-          [1, 2, 6, 5], // right face
-        ];
-
-        if (faceIndex < faces.length) {
-          const facePoints = faces[faceIndex];
-
-          // Apply orthogonal constraint
-          const constrainedDelta = constrainToOrthogonal(
-            delta,
-            faceIndex,
-            "Solid",
-          );
-
-          // Move all points of the face
-          facePoints.forEach((pointIndex) => {
-            const p = el.points[pointIndex];
-            const orig_p = dragOrig.points[pointIndex];
-            p.x = orig_p.x + (constrainedDelta.x || 0);
-            p.y = orig_p.y + (constrainedDelta.y || 0);
-            p.z = orig_p.z + (constrainedDelta.z || 0);
-          });
-        }
-      } else if (dragMode === "body") {
-        // Body drag - move all points (move the whole solid)
-        el.points.forEach((p, i) => {
-          const orig_p = dragOrig.points[i];
-          p.x = orig_p.x + (delta.x || 0);
-          p.y = orig_p.y + (delta.y || 0);
-          p.z = orig_p.z + (delta.z || 0);
-        });
-      } else {
-        // Fallback - move all points
-        el.points.forEach((p, i) => {
-          const orig_p = dragOrig.points[i];
-          p.x = orig_p.x + (delta.x || 0);
-          p.y = orig_p.y + (delta.y || 0);
-          p.z = orig_p.z + (delta.z || 0);
-        });
-      }
-    } else {
-      // Legacy dimension-based solid
-      const info = axisInfo(currentView);
-      const dh = dx;
-      const dv = dy;
-      const dhWorld = dh * info.h.sign;
-      const dvWorld = dv * info.v.sign;
-      const hProp = axisDims[info.h.axis];
-      const vProp = axisDims[info.v.axis];
-      if (dragMode === "left") {
-        el[hProp] = Math.max(1, dragOrig[hProp] - dh);
-        el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
-      } else if (dragMode === "right") {
-        el[hProp] = Math.max(1, dragOrig[hProp] + dh);
-        el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
-      } else if (dragMode === "top") {
-        el[vProp] = Math.max(1, dragOrig[vProp] - dv);
-        el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
-      } else if (dragMode === "bottom") {
-        el[vProp] = Math.max(1, dragOrig[vProp] + dv);
         el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
       } else {
         ["x", "y", "z"].forEach((k) => {
@@ -2183,7 +1833,7 @@ async function loadState() {
         y: e.y ?? 0,
         z: e.z ?? 0,
       };
-      if (obj.type === "Member" || obj.type === "Cable") {
+      if (obj.type === "Member") {
         if (e.points) {
           // New point-based format
           obj.points = e.points;
@@ -2191,8 +1841,8 @@ async function loadState() {
           obj.A = e.A ?? 0.01;
           obj.I = e.I ?? 1e-6;
           // Handle material and density
-          obj.material = e.material ?? (obj.type === "Cable" ? "steel" : "wood");
-          obj.density = e.density ?? (obj.type === "Cable" ? 7800 : 500);
+          obj.material = e.material ?? "wood";
+          obj.density = e.density ?? 500;
           // Recalculate mass if not set or if material/density changed
           if (!e.mass || e.material !== obj.material || e.density !== obj.density) {
             obj.mass = calculateMass(obj);
@@ -2209,8 +1859,8 @@ async function loadState() {
           obj.A = e.A ?? 0.01;
           obj.I = e.I ?? 1e-6;
           // Set default material and density for legacy elements
-          obj.material = obj.type === "Cable" ? "steel" : "wood";
-          obj.density = obj.type === "Cable" ? 7800 : 500;
+          obj.material = "wood";
+          obj.density = 500;
           obj.mass = calculateMass(obj);
         }
       } else if (obj.type === "Plane") {
@@ -2237,29 +1887,6 @@ async function loadState() {
           obj.material = "wood";
           obj.density = 500;
           obj.thickness = 0.01;
-          obj.mass = calculateMass(obj);
-        }
-      } else if (obj.type === "Solid") {
-        if (e.points) {
-          // Point-based solid
-          obj.points = e.points;
-          // Handle material and density
-          obj.material = e.material ?? "wood";
-          obj.density = e.density ?? 500;
-          // Recalculate mass if not set or if material/density changed
-          if (!e.mass || e.material !== obj.material || e.density !== obj.density) {
-            obj.mass = calculateMass(obj);
-          } else {
-            obj.mass = e.mass;
-          }
-        } else {
-          // Legacy dimension-based solid
-          obj.width = e.width ?? 30;
-          obj.height = e.height ?? 30;
-          obj.depth = e.depth ?? 30;
-          // Set default material and density for legacy elements
-          obj.material = "wood";
-          obj.density = 500;
           obj.mass = calculateMass(obj);
         }
       } else if (obj.type === "Load") {
@@ -2353,191 +1980,142 @@ document.querySelectorAll(".view-btn").forEach((btn) => {
 });
 
 function buildModel() {
-  // Collect all referenced points (by id or coordinates)
-  const referenced = new Set();
-  // Map from coordinate string to point object
-  const coordToPointObj = new Map();
-  // Map from coordinate string to id
-  const coordToId = new Map();
+  // This function has been refactored to treat planes as simple braced frames
+  // rather than fine-grained meshes, based on user feedback.
+
+  const points = [];
+  const members = [];
+  const loads = [];
+  const supports = [];
+
+  const pointMap = new Map(); // Map from "x,y,z" to point ID
   let nextPointId = 1;
 
-  // First, collect all points from all elements, but only mark as referenced if used by a member, support, or as the application point of a load
+  function getOrAddPoint(p) {
+    const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
+    if (pointMap.has(key)) {
+      return pointMap.get(key);
+    }
+    const newId = nextPointId++;
+    pointMap.set(key, newId);
+    points.push({ id: newId, x: p.x, y: p.y, z: p.z });
+    return newId;
+  }
+
+  // Process Members and Supports first
   globalThis.elements.forEach((el) => {
-    if (el.type === "Member" || el.type === "Cable") {
-      if (el.points) {
-        el.points.forEach((p) => {
-          const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
-          coordToPointObj.set(key, p);
-          referenced.add(key);
-        });
-      }
+    if (el.type === "Member") {
+      const startId = getOrAddPoint(el.points[0]);
+      const endId = getOrAddPoint(el.points[1]);
+      members.push({
+        start: startId,
+        end: endId,
+        E: el.E ?? 200e9,
+        A: el.A ?? 0.01,
+        I: el.I ?? 1e-6,
+        J: el.I ? el.I * 2 : 2e-6, // Approx for a circle
+        G: (el.E ?? 200e9) / (2 * (1 + 0.3)), // Assume steel/aluminum
+      });
     } else if (el.type === "Support") {
-      if (el.points) {
-        const p = el.points[0];
-        const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
-        coordToPointObj.set(key, p);
-        referenced.add(key);
-      }
-    } else if (el.type === "Load") {
-      if (el.points) {
-        // Only the first point is the application point
-        const p = el.points[0];
-        const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
-        coordToPointObj.set(key, p);
-        referenced.add(key);
-        // The second point is direction only, do not add to referenced
-        if (el.points[1]) {
-          const key2 = `${el.points[1].x.toFixed(6)},${el.points[1].y.toFixed(6)},${el.points[1].z.toFixed(6)}`;
-          coordToPointObj.set(key2, el.points[1]);
-        }
-      }
-    } else if (el.type === "Plane" || el.type === "Solid") {
-      if (el.points) {
-        el.points.forEach((p) => {
-          const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
-          coordToPointObj.set(key, p);
-        });
-      }
+      const pointId = getOrAddPoint(el.points[0]);
+      supports.push({
+        point: pointId,
+        ux: el.ux !== false, uy: el.uy !== false, uz: el.uz !== false,
+        rx: el.rx !== false, ry: el.ry !== false, rz: el.rz !== false,
+      });
     }
   });
 
-  // Assign ids only to referenced points
-  Array.from(referenced).forEach((key) => {
-    if (!coordToId.has(key)) {
-      coordToId.set(key, nextPointId++);
-    }
-  });
-
-  // Build points array for the model
-  const points = Array.from(referenced).map((key) => {
-    const p = coordToPointObj.get(key);
-    return { id: coordToId.get(key), x: p.x, y: p.y, z: p.z };
-  });
-
-  // Helper to get id for a coordinate
-  function getPointId(x, y, z = 0) {
-    const key = `${x.toFixed(6)},${y.toFixed(6)},${z.toFixed(6)}`;
-    return coordToId.get(key);
-  }
-
-  // Helper to calculate center of gravity for different element types
-  function calculateCenterOfGravity(el) {
-    if (!el.points || el.points.length === 0) return null;
-
-    if (el.type === "Member" || el.type === "Cable") {
-      // Center of gravity is at the midpoint
-      const p1 = el.points[0];
-      const p2 = el.points[1];
-      return {
-        x: (p1.x + p2.x) / 2,
-        y: (p1.y + p2.y) / 2,
-        z: (p1.z + p2.z) / 2,
-      };
-    } else if (el.type === "Plane") {
-      // Center of gravity is at the centroid of the plane
-      const sumX = el.points.reduce((sum, p) => sum + p.x, 0);
-      const sumY = el.points.reduce((sum, p) => sum + p.y, 0);
-      const sumZ = el.points.reduce((sum, p) => sum + p.z, 0);
-      return {
-        x: sumX / el.points.length,
-        y: sumY / el.points.length,
-        z: sumZ / el.points.length,
-      };
-    }
-    return null;
-  }
-
-  // Calculate gravity loads from masses
-  const gravityLoads = [];
+  // Process Planes into simple frame structures
   globalThis.elements.forEach((el) => {
-    if (el.mass && el.mass > 0) {
-      const cog = calculateCenterOfGravity(el);
-      if (cog) {
-        // Calculate gravity force: F = mg (acting in -Z direction)
-        const gravityForce = el.mass * globalProps.g;
+    if (el.type === "Plane") {
+      if (!el.points || el.points.length < 4) return;
+      
+      const p = el.points.map(pt => getOrAddPoint(pt));
 
-        // Find the closest point to apply the gravity load
-        let closestPoint = null;
-        let minDistance = Infinity;
+      const E = el.E ?? (el.material === 'steel' ? 200e9 : 10e9);
+      const G = E / (2 * (1 + 0.3));
+      const t = el.thickness ?? 0.01;
+      
+      // Assume square cross-section for generated members
+      const A = t * t;
+      const I = Math.pow(t, 4) / 12;
+      const J = 0.1406 * Math.pow(t, 4);
 
-        points.forEach((point) => {
-          const distance = Math.sqrt(
-            Math.pow(point.x - cog.x, 2) +
-              Math.pow(point.y - cog.y, 2) +
-              Math.pow(point.z - cog.z, 2),
-          );
-          if (distance < minDistance) {
-            minDistance = distance;
-            closestPoint = point;
-          }
-        });
-
-        if (closestPoint) {
-          gravityLoads.push({
-            point: closestPoint.id,
-            fx: 0, // No horizontal component
-            fy: -gravityForce, // Downward force (negative Y direction)
-            mz: 0,
-            amount: gravityForce,
-            isGravityLoad: true, // Flag to identify gravity loads
-            sourceElement: el.id,
-          });
-        }
-      }
+      const memberProps = { E, A, I, G, J };
+      
+      // Edges
+      members.push({ start: p[0], end: p[1], ...memberProps });
+      members.push({ start: p[1], end: p[2], ...memberProps });
+      members.push({ start: p[2], end: p[3], ...memberProps });
+      members.push({ start: p[3], end: p[0], ...memberProps });
+      
+      // Diagonals for shear stiffness
+      members.push({ start: p[0], end: p[2], ...memberProps });
+      members.push({ start: p[1], end: p[3], ...memberProps });
     }
   });
 
-  const members = globalThis.elements
-    .filter((e) => e.type === "Member" || e.type === "Cable")
-    .map((e) => {
-      if (e.points) {
-        return {
-          start: getPointId(e.points[0].x, e.points[0].y, e.points[0].z),
-          end: getPointId(e.points[1].x, e.points[1].y, e.points[1].z),
-          E: e.E ?? 200e9,
-          A: e.A ?? 0.01,
-          I: e.I ?? 1e-6,
-        };
-      }
-    });
-
-  const loads = globalThis.elements
-    .filter((e) => e.type === "Load")
-    .map((e) => {
-      if (e.points) {
-        const dx = e.points[1].x - e.points[0].x;
-        const dy = e.points[1].y - e.points[0].y;
-        const dz = e.points[1].z - e.points[0].z;
+  // Process Loads
+  globalThis.elements.forEach((el) => {
+    if (el.type === "Load") {
+        const startId = getOrAddPoint(el.points[0]);
+        const dx = el.points[1].x - el.points[0].x;
+        const dy = el.points[1].y - el.points[0].y;
+        const dz = el.points[1].z - el.points[0].z;
         const len = Math.hypot(dx, dy, dz) || 1;
-        const amt = e.amount ?? 0;
-        return {
-          point: getPointId(e.points[0].x, e.points[0].y, e.points[0].z),
+        const amt = el.amount ?? 0;
+        loads.push({
+          point: startId,
           fx: (amt * dx) / len,
           fy: (amt * dy) / len,
-          mz: 0,
+          fz: (amt * dz) / len,
+          mx: 0, my: 0, mz: 0,
           amount: amt,
           isGravityLoad: false,
-        };
-      }
+        });
+    }
+  });
+  
+  // Process Gravity Loads
+    globalThis.elements.forEach((el) => {
+        if (el.mass && el.mass > 0 && el.points) {
+            // Find center of gravity
+            const cog = {
+                x: el.points.reduce((sum, p) => sum + p.x, 0) / el.points.length,
+                y: el.points.reduce((sum, p) => sum + p.y, 0) / el.points.length,
+                z: el.points.reduce((sum, p) => sum + p.z, 0) / el.points.length
+            };
+            
+            // Find the closest structural point to apply the gravity load
+            let closestPointId = -1;
+            let minDistance = Infinity;
+
+            points.forEach(point => {
+                const d = Math.hypot(point.x - cog.x, point.y - cog.y, point.z - cog.z);
+                if (d < minDistance) {
+                    minDistance = d;
+                    closestPointId = point.id;
+                }
+            });
+
+            if (closestPointId !== -1) {
+                const gravityForce = el.mass * globalProps.g;
+                loads.push({
+                    point: closestPointId,
+                    fx: 0,
+                    fy: -gravityForce, // Gravity acts in -Y
+                    fz: 0,
+                    mx: 0, my: 0, mz: 0,
+                    amount: gravityForce,
+                    isGravityLoad: true,
+                    sourceElement: el.id,
+                });
+            }
+        }
     });
 
-  const supports = globalThis.elements
-    .filter((e) => e.type === "Support")
-    .map((e) => {
-      if (e.points) {
-        return {
-          point: getPointId(e.points[0].x, e.points[0].y, e.points[0].z),
-          ux: e.ux !== false,
-          uy: e.uy !== false,
-          rz: e.rz !== false,
-        };
-      }
-    });
-
-  // Combine regular loads with gravity loads
-  const allLoads = [...loads, ...gravityLoads];
-
-  return { points, members, loads: allLoads, supports };
+  return { points, members, loads, supports };
 }
 
 async function solveModel() {
@@ -3010,64 +2588,38 @@ function renderCalculationResults() {
 
 loadState();
 
-function solidVertices(el) {
-  // If the solid is defined by points, return them directly
-  if (el.points) {
-    return el.points;
-  }
-
-  // Legacy: if not point-based, calculate from dimensions
-  const w = (el.width ?? 30) / 2;
-  const h = (el.height ?? 30) / 2;
-  const d = (el.depth ?? 30) / 2;
-  return [
-    { x: el.x - w, y: el.y - h, z: el.z - d },
-    { x: el.x + w, y: el.y - h, z: el.z - d },
-    { x: el.x + w, y: el.y + h, z: el.z - d },
-    { x: el.x - w, y: el.y + h, z: el.z - d },
-    { x: el.x - w, y: el.y - h, z: el.z + d },
-    { x: el.x + w, y: el.y - h, z: el.z + d },
-    { x: el.x + w, y: el.y + h, z: el.z + d },
-    { x: el.x - w, y: el.y + h, z: el.z + d },
-  ];
-}
-
-function constrainToOrthogonal(delta, faceIndex, elementType) {
-  // For planes: constrain edge movements to be orthogonal
-  // For solids: constrain face movements to be orthogonal
+function constrainToOrthogonal(delta, faceIndex) {
+  // For planes: constrain edge movements to be orthogonal to the edge direction
   const constrained = { x: 0, y: 0, z: 0 };
 
-  if (elementType === "Plane") {
-    // Plane edges: constrain to the plane defined by the edge
-    // For a plane, edges define planes that are perpendicular to the edge direction
+  // Get the current rotation matrix to understand the view orientation
+  const matrix = getRotationMatrix();
+  
+  // For plane edges, we need to determine which direction the edge is pointing
+  // in the current view and constrain movement to be perpendicular to that direction
+  
+  // Edge definitions for a plane (assuming standard rectangular plane)
+  const edgeDirections = [
+    [0, 1], // edge 0-1: typically along Y axis
+    [1, 2], // edge 1-2: typically along X axis  
+    [2, 3], // edge 2-3: typically along Y axis
+    [3, 0], // edge 3-0: typically along X axis
+  ];
+
+  if (faceIndex < edgeDirections.length) {
+    // For now, use a simplified approach: allow movement in the plane
+    // that contains the edge, but constrain to the two axes of that plane
     const edgePlanes = [
-      ["y", "z"], // edge 0-1: Y-Z plane (allows Y and Z movement)
-      ["x", "z"], // edge 1-2: X-Z plane (allows X and Z movement)
-      ["y", "z"], // edge 2-3: Y-Z plane (allows Y and Z movement)
-      ["x", "z"], // edge 3-0: X-Z plane (allows X and Z movement)
+      ["y", "z"], // edge 0-1: Y-Z plane
+      ["x", "z"], // edge 1-2: X-Z plane
+      ["y", "z"], // edge 2-3: Y-Z plane
+      ["x", "z"], // edge 3-0: X-Z plane
     ];
 
-    if (faceIndex < edgePlanes.length) {
-      const axes = edgePlanes[faceIndex];
-      axes.forEach((axis) => {
-        constrained[axis] = delta[axis] || 0;
-      });
-    }
-  } else if (elementType === "Solid") {
-    // Solid faces: constrain to the axis normal to the face
-    const faceAxes = [
-      "z", // bottom face: move in Z direction
-      "z", // top face: move in Z direction
-      "y", // front face: move in Y direction
-      "y", // back face: move in Y direction
-      "x", // left face: move in X direction
-      "x", // right face: move in X direction
-    ];
-
-    if (faceIndex < faceAxes.length) {
-      const axis = faceAxes[faceIndex];
+    const axes = edgePlanes[faceIndex];
+    axes.forEach((axis) => {
       constrained[axis] = delta[axis] || 0;
-    }
+    });
   }
 
   return constrained;
@@ -3089,17 +2641,12 @@ function calculateMass(el) {
       el.density = 7800;
     } else {
       // Set default material and density based on element type
-      if (el.type === "Cable") {
-        el.material = "steel";
-        el.density = 7800;
-      } else {
-        el.material = "wood";
-        el.density = 500;
-      }
+      el.material = "wood";
+      el.density = 500;
     }
   }
 
-  if (el.type === "Member" || el.type === "Cable") {
+  if (el.type === "Member") {
     // Mass = Cross Section × Length × Density
     const area = el.A || 0.01;
     const length = calculateLength(el);
@@ -3109,16 +2656,12 @@ function calculateMass(el) {
     const area = calculateArea(el);
     const thickness = el.thickness || 0.01;
     return area * thickness * el.density;
-  } else if (el.type === "Solid") {
-    // Mass = Volume × Density
-    const volume = calculateVolume(el);
-    return volume * el.density;
   }
   
   return 0;
 }
 
-// Helper function to calculate length of a member/cable
+// Helper function to calculate length of a member
 function calculateLength(el) {
   if (el.points && el.points.length >= 2) {
     const p1 = el.points[0];
@@ -3148,26 +2691,4 @@ function calculateArea(el) {
   const length = el.length || 40;
   const width = el.width || 40;
   return length * width;
-}
-
-// Helper function to calculate volume of a solid
-function calculateVolume(el) {
-  if (el.points && el.points.length >= 8) {
-    // Calculate volume using the 8 corner points
-    // This is a simplified calculation assuming the solid is a rectangular prism
-    const xCoords = el.points.map(p => p.x);
-    const yCoords = el.points.map(p => p.y);
-    const zCoords = el.points.map(p => p.z);
-    
-    const width = Math.max(...xCoords) - Math.min(...xCoords);
-    const height = Math.max(...yCoords) - Math.min(...yCoords);
-    const depth = Math.max(...zCoords) - Math.min(...zCoords);
-    
-    return width * height * depth;
-  }
-  // Fallback to legacy dimension-based calculation
-  const width = el.width || 30;
-  const height = el.height || 30;
-  const depth = el.depth || 30;
-  return width * height * depth;
 }

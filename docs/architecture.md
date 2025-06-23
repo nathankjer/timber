@@ -59,7 +59,7 @@ SQLite 3  ←─ SQLAlchemy ORM → Alembic migrations
 
 ## 4  Solver Core
 
-* **Element classes:** `Joint`, `Member`, `Cable`, `Plane`, `Solid`.
+* **Element classes:** `Joint`, `Member`, `Plane`.
 * **Assembly:** Sparse block matrices (SciPy optional).
 * **Solve path:** Kx = F → reactions, internal forces, stresses.
 * Handles **singular** or nearly–singular systems by SVD fallback.
