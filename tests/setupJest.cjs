@@ -27,7 +27,11 @@ document.body.innerHTML = `
     <button id="zoom-out"></button>
     <button id="home-btn"></button>
   </div>
+  <div class="btn-group">
+    <button id="play-sim-btn"></button>
+  </div>
   <span id="current-view">+Z</span>
+  <span id="fps-display"></span>
   <svg    id="canvas"></svg>
   <select id="element-type"></select>
   <button id="add-btn"></button>

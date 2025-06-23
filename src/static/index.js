@@ -2077,46 +2077,155 @@ function buildModel() {
     }
   });
   
-  // Process Gravity Loads
-    globalThis.elements.forEach((el) => {
-        if (el.mass && el.mass > 0 && el.points) {
-            // Find center of gravity
-            const cog = {
-                x: el.points.reduce((sum, p) => sum + p.x, 0) / el.points.length,
-                y: el.points.reduce((sum, p) => sum + p.y, 0) / el.points.length,
-                z: el.points.reduce((sum, p) => sum + p.z, 0) / el.points.length
-            };
-            
-            // Find the closest structural point to apply the gravity load
-            let closestPointId = -1;
-            let minDistance = Infinity;
-
-            points.forEach(point => {
-                const d = Math.hypot(point.x - cog.x, point.y - cog.y, point.z - cog.z);
-                if (d < minDistance) {
-                    minDistance = d;
-                    closestPointId = point.id;
-                }
-            });
-
-            if (closestPointId !== -1) {
-                const gravityForce = el.mass * globalProps.g;
-                loads.push({
-                    point: closestPointId,
-                    fx: 0,
-                    fy: -gravityForce, // Gravity acts in -Y
-                    fz: 0,
-                    mx: 0, my: 0, mz: 0,
-                    amount: gravityForce,
-                    isGravityLoad: true,
-                    sourceElement: el.id,
-                });
-            }
+  // Process Gravity Loads by distributing them to the element's defining points
+  const gravityLoadsByPoint = new Map();
+  globalThis.elements.forEach((el) => {
+    if (el.mass && el.mass > 0 && el.points && el.points.length > 0) {
+      const gravityForce = el.mass * globalProps.g;
+      const loadPerPoint = gravityForce / el.points.length;
+      
+      el.points.forEach(p => {
+        const pointId = getOrAddPoint(p);
+        if (gravityLoadsByPoint.has(pointId)) {
+          gravityLoadsByPoint.get(pointId).fy -= loadPerPoint;
+          gravityLoadsByPoint.get(pointId).amount += loadPerPoint;
+        } else {
+          gravityLoadsByPoint.set(pointId, {
+            point: pointId,
+            fx: 0,
+            fy: -loadPerPoint, // Gravity acts in -Y
+            fz: 0,
+            mx: 0, my: 0, mz: 0,
+            amount: loadPerPoint,
+            isGravityLoad: true,
+            sourceElement: el.id, // Note: sourceElement will be overwritten for shared points
+          });
         }
-    });
+      });
+    }
+  });
+
+  loads.push(...gravityLoadsByPoint.values());
 
   return { points, members, loads, supports };
 }
+
+async function runSimulation() {
+  const payload = buildModel();
+  console.log("Simulating model:", payload);
+
+  // Add unit system to payload
+  const unitSystem = globalProps.units || "metric";
+  payload.unit_system = unitSystem;
+  
+  // Disable button to prevent multiple clicks
+  const playBtn = document.getElementById("play-sim-btn");
+  playBtn.disabled = true;
+
+  try {
+    const resp = await fetch(`/simulate?step=0.016&simulation_time=10`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.simulation_data && data.simulation_data.length > 0) {
+        await playSimulation(data.simulation_data);
+      } else {
+        console.warn("Simulation returned no data.");
+      }
+    } else {
+      console.error("Error running simulation:", await resp.text());
+    }
+  } catch (err) {
+    console.error("Failed to fetch simulation:", err);
+  } finally {
+    playBtn.disabled = false;
+  }
+}
+
+let originalElements = null;
+
+async function playSimulation(frames) {
+  // Store the original state by deep copying
+  originalElements = JSON.parse(JSON.stringify(globalThis.elements));
+  
+  // To map simulation results back to our frontend elements, we need a stable
+  // mapping from a point's original coordinates to its ID in the solver model.
+  // We build this map once before the animation starts.
+  const tempElements = globalThis.elements;
+  globalThis.elements = JSON.parse(JSON.stringify(originalElements));
+  const modelForMapping = buildModel();
+  globalThis.elements = tempElements; // Restore elements for animation
+
+  const coordToIdMap = new Map();
+  modelForMapping.points.forEach(p => {
+    const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
+    coordToIdMap.set(key, p.id);
+  });
+
+  let frameIndex = 0;
+  let lastTime = performance.now();
+  const fpsDisplay = document.getElementById("fps-display");
+
+  function animate(currentTime) {
+    if (frameIndex >= frames.length) {
+      // Restore original state when animation is done
+      globalThis.elements = originalElements;
+      originalElements = null;
+      render();
+      if(fpsDisplay) fpsDisplay.textContent = "";
+      return;
+    }
+
+    const frame = frames[frameIndex];
+    if (!frame || !frame.points) {
+        frameIndex++;
+        requestAnimationFrame(animate);
+        return;
+    }
+
+    const pointPositions = new Map();
+    frame.points.forEach(p => {
+        pointPositions.set(p.id, { x: p.x, y: p.y, z: p.z });
+    });
+
+    // Update `globalThis.elements` by finding the original point, mapping it
+    // to a solver ID, and then applying the new position from the frame.
+    globalThis.elements.forEach((el, elIndex) => {
+        const originalEl = originalElements[elIndex];
+        if (el.points && originalEl.points) {
+            el.points.forEach((p, pIndex) => {
+                const originalP = originalEl.points[pIndex];
+                const key = `${originalP.x.toFixed(6)},${originalP.y.toFixed(6)},${originalP.z.toFixed(6)}`;
+                const pointId = coordToIdMap.get(key);
+                if (pointId && pointPositions.has(pointId)) {
+                    const newPos = pointPositions.get(pointId);
+                    p.x = newPos.x;
+                    p.y = newPos.y;
+                    p.z = newPos.z;
+                }
+            });
+        }
+    });
+
+    render(false);
+
+    // Calculate and display FPS
+    const deltaTime = currentTime - lastTime;
+    lastTime = currentTime;
+    const fps = 1000 / deltaTime;
+    if(fpsDisplay) fpsDisplay.textContent = `FPS: ${fps.toFixed(1)}`;
+
+    frameIndex++;
+    requestAnimationFrame(animate);
+  }
+
+  requestAnimationFrame(animate);
+}
+
 
 async function solveModel() {
   const payload = buildModel();
@@ -2419,6 +2528,7 @@ async function solveModel() {
 }
 
 document.getElementById("solve-btn").addEventListener("click", solveModel);
+document.getElementById("play-sim-btn").addEventListener("click", runSimulation);
 
 // Global variable to store the last calculation results
 let lastCalculationResults = null;
@@ -2478,7 +2588,7 @@ function renderCalculationResults() {
 
   const svg = document.getElementById("canvas");
 
-  const { displacements, reactions, points, gravityLoads } =
+  const { reactions, points, gravityLoads } =
     lastCalculationResults;
 
   // Create a group for calculation results
@@ -2494,44 +2604,25 @@ function renderCalculationResults() {
     const point = points.find((p) => p.id === parseInt(pointId));
     if (!point) return;
 
-    let fx, fy, mz;
+    let fx, fy, fz;
 
-    // Handle different response formats
-    if (v && typeof v === "object") {
-      if (Array.isArray(v)) {
-        // Direct array format
-        [fx, fy, mz] = v;
-      } else if (v.raw && Array.isArray(v.raw)) {
-        // New format with raw values
-        [fx, fy, mz] = v.raw;
-      } else if (
-        v.fx !== undefined &&
-        v.fy !== undefined &&
-        v.mz !== undefined
-      ) {
-        // Object format with fx, fy, mz properties
-        fx = v.fx;
-        fy = v.fy;
-        mz = v.mz;
-      } else {
-        // Skip if we can't extract force components
-        return;
-      }
+    // The python engine now consistently returns a 6-element array
+    if (Array.isArray(v) && v.length >= 3) {
+      [fx, fy, fz] = v;
     } else {
-      // Skip if not an object
-      return;
+      return; // Skip if format is not as expected
     }
 
-    const magnitude = Math.sqrt(fx * fx + fy * fy);
+    const magnitude = Math.sqrt(fx * fx + fy * fy + fz * fz);
     if (magnitude < 1e-6) return; // Skip very small reactions
 
     // Define the vector in 3D world space
-    const world_scale = 0.001 * 20; // Scale for visualization (was 0.001 * 0.1)
+    const world_scale = 0.001 * 20; 
     const start_3d = { x: point.x, y: point.y, z: point.z };
     const end_3d = {
       x: point.x + fx * world_scale,
       y: point.y + fy * world_scale,
-      z: point.z, // fz is 0 in 2D analysis
+      z: point.z + fz * world_scale,
     };
 
     // Project both points to screen space. `screenCoords` handles zoom/pan.
@@ -2559,13 +2650,15 @@ function renderCalculationResults() {
       const magnitude = gravityLoad.amount || 0;
       if (magnitude < 1e-6) return; // Skip very small gravity forces
 
-      // Gravity acts downward (-Z direction, which projects as +Y in screen space)
       const world_scale = 0.001 * 20;
       const start_3d = { x: point.x, y: point.y, z: point.z };
+      
+      // Use the actual force components from the load object
+      // Note: gravity is applied as a -Y force in buildModel
       const end_3d = {
-        x: point.x,
-        y: point.y,
-        z: point.z - magnitude * world_scale, // Downward in Z
+        x: point.x + (gravityLoad.fx || 0) * world_scale,
+        y: point.y + (gravityLoad.fy || 0) * world_scale,
+        z: point.z + (gravityLoad.fz || 0) * world_scale,
       };
 
       // Project both points to screen space
@@ -2677,18 +2770,27 @@ function calculateLength(el) {
 
 // Helper function to calculate area of a plane
 function calculateArea(el) {
-  if (el.points && el.points.length >= 4) {
-    // Calculate area using shoelace formula for polygon
-    let area = 0;
+  if (el.points && el.points.length >= 3) {
+    // Newell's method for calculating the area of a 3D polygon.
+    // This is robust and works for non-planar polygons as well.
+    let ax = 0;
+    let ay = 0;
+    let az = 0;
     for (let i = 0; i < el.points.length; i++) {
-      const j = (i + 1) % el.points.length;
-      area += el.points[i].x * el.points[j].y;
-      area -= el.points[j].x * el.points[i].y;
+      const p1 = el.points[i];
+      const p2 = el.points[(i + 1) % el.points.length];
+      ax += (p1.y - p2.y) * (p1.z + p2.z);
+      ay += (p1.z - p2.z) * (p1.x + p2.x);
+      az += (p1.x - p2.x) * (p1.y + p2.y);
     }
-    return Math.abs(area) / 2;
+    // The magnitude of the resulting vector is twice the area.
+    return Math.sqrt(ax * ax + ay * ay + az * az) / 2;
   }
-  // Fallback to legacy dimension-based calculation
-  const length = el.length || 40;
-  const width = el.width || 40;
-  return length * width;
+  
+  // Fallback for legacy elements that are not defined by points.
+  if (el.length && el.width) {
+    return (el.length || 0) * (el.width || 0);
+  }
+
+  return 0; // If no points or dimensions, area is zero.
 }

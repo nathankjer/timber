@@ -6,7 +6,7 @@ import sys
 from flask import Flask, jsonify, render_template, request
 from flask_login import current_user
 
-from timber import Load, Member, Model, Point, Support, solve_with_diagnostics
+from timber import Load, Member, Model, Point, Support, solve_with_diagnostics, simulate_dynamics
 from timber.extensions import bcrypt, db, login_manager, migrate
 from timber.units import (
     area,
@@ -45,6 +45,39 @@ def create_app(config_object: object | str | None = None) -> Flask:
         config_object = import_string(config_object)
 
     app.config.from_object(config_object)
+
+    # --- Model Factory Functions --------------------------------------
+    def make_point(p):
+        return Point(
+            id=p["id"],
+            x=length(p["x"]),
+            y=length(p["y"]),
+            z=length(p.get("z", 0.0)),
+        )
+
+    def make_member(m):
+        return Member(
+            start=m["start"],
+            end=m["end"],
+            E=stress(m.get("E", 200e9)),
+            A=area(m.get("A", 0.01)),
+            I=moment_of_inertia(m.get("I", 1e-6)),
+            J=moment_of_inertia(m.get("J", 2e-6)),
+            G=stress(m.get("G", 75e9)),
+        )
+
+    def make_load(l):
+        return Load(
+            point=l["point"],
+            fx=force(l.get("fx", 0.0)),
+            fy=force(l.get("fy", 0.0)),
+            fz=force(l.get("fz", 0.0)),
+            mx=moment(l.get("mx", 0.0)),
+            my=moment(l.get("my", 0.0)),
+            mz=moment(l.get("mz", 0.0)),
+            amount=force(l.get("amount", 0.0)),
+            is_gravity_load=l.get("isGravityLoad", False),
+        )
 
     # --- Initialize extensions ----------------------------------------
     db.init_app(app)
@@ -124,32 +157,6 @@ def create_app(config_object: object | str | None = None) -> Flask:
 
             filtered_points = [p for p in points_in if p["id"] in referenced_ids]
 
-            def make_point(p):
-                return Point(
-                    id=p["id"],
-                    x=length(p["x"]),
-                    y=length(p["y"]),
-                    z=length(p.get("z", 0.0)),
-                )
-
-            def make_member(m):
-                return Member(
-                    start=m["start"],
-                    end=m["end"],
-                    E=stress(m.get("E", 200e9)),
-                    A=area(m.get("A", 0.01)),
-                    I=moment_of_inertia(m.get("I", 1e-6)),
-                )
-
-            def make_load(l):
-                return Load(
-                    point=l["point"],
-                    fx=force(l.get("fx", 0.0)),
-                    fy=force(l.get("fy", 0.0)),
-                    mz=moment(l.get("mz", 0.0)),
-                    amount=force(l.get("amount", 0.0)),
-                )
-
             model = Model(
                 points=[make_point(p) for p in filtered_points],
                 members=[make_member(m) for m in members_in],
@@ -188,6 +195,38 @@ def create_app(config_object: object | str | None = None) -> Flask:
                 "unit_system": res.unit_system,
             }
         )
+
+    @app.post("/simulate")
+    def simulate_endpoint():
+        """
+        Run a dynamic simulation for a structural model.
+        Expects a JSON payload with points, members, loads, supports.
+        Query params: ?step=0.1&simulation_time=10
+        """
+        if not request.is_json:
+            return jsonify({"error": "JSON body required"}), 400
+
+        data = request.get_json()
+        step = request.args.get("step", default=0.1, type=float)
+        simulation_time = request.args.get("simulation_time", default=10.0, type=float)
+
+        # Set unit system if provided
+        unit_system = data.get("unit_system", "metric")
+        set_unit_system(unit_system)
+
+        try:
+            model = Model(
+                points=[make_point(p) for p in data.get("points", [])],
+                members=[make_member(m) for m in data.get("members", [])],
+                loads=[make_load(l) for l in data.get("loads", [])],
+                supports=[Support(**s) for s in data.get("supports", [])],
+            )
+        except (TypeError, KeyError) as exc:
+            return jsonify({"error": f"Invalid payload: {exc}"}), 400
+
+        frames = simulate_dynamics(model, step, simulation_time)
+
+        return jsonify({"simulation_data": frames})
 
     @app.get("/units/info")
     def get_unit_info():

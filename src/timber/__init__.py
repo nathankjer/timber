@@ -7,6 +7,7 @@ from .engine import (
     Point,
     Results,
     Support,
+    simulate_dynamics,
     solve,
     solve_with_diagnostics,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "Results",
     "solve",
     "solve_with_diagnostics",
+    "simulate_dynamics",
     "User",
     "db",
 ]

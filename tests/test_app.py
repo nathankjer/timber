@@ -246,8 +246,8 @@ def test_triangle_with_directional_load_no_false_instability():
         }
     ]
     triangle_supports = [
-        {"point": 2, "ux": True, "uy": True, "rz": True},
-        {"point": 1, "ux": True, "uy": True, "rz": True},
+        {"point": 2, "ux": True, "uy": True, "uz": True, "rx": True, "ry": True, "rz": True},
+        {"point": 1, "ux": True, "uy": True, "uz": True, "rx": True, "ry": True, "rz": True},
     ]
     app = create_test_app()
     with app.test_client() as client:
@@ -268,3 +268,43 @@ def test_triangle_with_directional_load_no_false_instability():
             "unstable" in issue or "insufficiently constrained" in issue
             for issue in data["issues"]
         ), f"Unexpected instability warning: {data['issues']}"
+
+
+def test_simulate_endpoint_returns_frames():
+    """Verify that the /simulate endpoint returns a list of simulation frames,
+    each with a time and a list of points."""
+    app = create_test_app()
+    with app.test_client() as client:
+        # Simple one-member model
+        payload = {
+            "points": [
+                {"id": 1, "x": 0, "y": 0, "z": 0},
+                {"id": 2, "x": 1, "y": 0, "z": 0},
+            ],
+            "members": [{"start": 1, "end": 2, "E": 200e9, "A": 0.01, "I": 1e-6}],
+            "loads": [{"point": 2, "fy": -1000}],
+            "supports": [{"point": 1, "ux": True, "uy": True, "rz": True}],
+            "unit_system": "metric",
+        }
+        # Simulate for a very short time
+        resp = client.post("/simulate?step=0.1&simulation_time=0.25", json=payload)
+        assert resp.status_code == 200
+        data = resp.get_json()
+
+        assert "simulation_data" in data
+        frames = data["simulation_data"]
+        assert isinstance(frames, list)
+        assert len(frames) > 1  # Should have at least start and one step
+
+        # Check frame structure
+        first_frame = frames[0]
+        assert "time" in first_frame
+        assert "points" in first_frame
+        assert isinstance(first_frame["points"], list)
+
+        # Check point structure in a frame
+        first_point = first_frame["points"][0]
+        assert "id" in first_point
+        assert "x" in first_point
+        assert "y" in first_point
+        assert "z" in first_point

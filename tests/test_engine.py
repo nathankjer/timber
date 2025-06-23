@@ -23,6 +23,7 @@ from timber.engine import (
     _local_stiffness,
     _transformation,
     solve_with_diagnostics,
+    simulate_dynamics,
 )
 
 # --------------------------------------------------------------------------- #
@@ -160,3 +161,60 @@ def test_diagnostics_detect_large_displacements():
     assert any("Very large displacements" in msg for msg in issues)
     # Make sure the instability message **isn't** wrongly triggered here
     assert not any("unstable" in msg for msg in issues)
+
+
+def test_simulate_dynamics_returns_frames():
+    """Test that simulate_dynamics returns a list of simulation frames."""
+    model = Model(
+        points=[
+            Point(id=1, x=length(0.0), y=length(0.0)), 
+            Point(id=2, x=length(1.0), y=length(0.0))
+        ],
+        members=[
+            Member(
+                start=1, 
+                end=2, 
+                E=stress(200e9), 
+                A=area(0.01), 
+                I=moment_of_inertia(1e-6), 
+                J=moment_of_inertia(2e-6), 
+                G=stress(75e9)
+            )
+        ],
+        loads=[
+            Load(point=2, fy=force(-100.0), is_gravity_load=True)
+        ],
+        supports=[
+            Support(point=1, ux=True, uy=True, uz=True, rx=True, ry=True, rz=True)
+        ],
+    )
+    
+    frames = simulate_dynamics(model, step=0.1, simulation_time=1.0)
+    
+    # Should return a list of frames
+    assert isinstance(frames, list)
+    assert len(frames) > 0
+    
+    # Each frame should have time and points
+    for frame in frames:
+        assert "time" in frame
+        assert "points" in frame
+        assert isinstance(frame["time"], (int, float))
+        assert isinstance(frame["points"], list)
+        
+        # Each point should have id, x, y, z
+        for point in frame["points"]:
+            assert "id" in point
+            assert "x" in point
+            assert "y" in point
+            assert "z" in point
+            assert isinstance(point["x"], (int, float))
+            assert isinstance(point["y"], (int, float))
+            assert isinstance(point["z"], (int, float))
+
+
+def test_simulate_dynamics_empty_model():
+    """Test that simulate_dynamics handles empty models gracefully."""
+    model = Model()
+    frames = simulate_dynamics(model, step=0.1, simulation_time=1.0)
+    assert frames == []
