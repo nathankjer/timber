@@ -287,7 +287,7 @@ def test_simulate_endpoint_returns_frames():
             "unit_system": "metric",
         }
         # Simulate for a very short time
-        resp = client.post("/simulate?step=0.1&simulation_time=0.25", json=payload)
+        resp = client.post("/simulate?step=0.005&simulation_time=0.25", json=payload)
         assert resp.status_code == 200
         data = resp.get_json()
 

@@ -2123,7 +2123,7 @@ async function runSimulation() {
   playBtn.disabled = true;
 
   try {
-    const resp = await fetch(`/simulate?step=0.016&simulation_time=10`, {
+    const resp = await fetch(`/simulate?step=0.005&simulation_time=10`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -2149,78 +2149,95 @@ async function runSimulation() {
 let originalElements = null;
 
 async function playSimulation(frames) {
-  // Store the original state by deep copying
   originalElements = JSON.parse(JSON.stringify(globalThis.elements));
-  
-  // To map simulation results back to our frontend elements, we need a stable
-  // mapping from a point's original coordinates to its ID in the solver model.
-  // We build this map once before the animation starts.
+
+  // Build mapping from original coordinates to solver point IDs
   const tempElements = globalThis.elements;
   globalThis.elements = JSON.parse(JSON.stringify(originalElements));
   const modelForMapping = buildModel();
-  globalThis.elements = tempElements; // Restore elements for animation
-
+  globalThis.elements = tempElements;
   const coordToIdMap = new Map();
   modelForMapping.points.forEach(p => {
     const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
     coordToIdMap.set(key, p.id);
   });
 
-  let frameIndex = 0;
+  // Get simulation time range
+  const simStart = frames[0].time;
+  const simEnd = frames[frames.length - 1].time;
+  const simDuration = simEnd - simStart;
+
+  let startWallTime = null;
   let lastTime = performance.now();
   const fpsDisplay = document.getElementById("fps-display");
+  let lastFpsUpdate = performance.now();
+  let frameCount = 0;
+
+  function interpolatePoints(t) {
+    // Find the two frames that bound t
+    let i = 0;
+    while (i < frames.length - 1 && frames[i + 1].time < t) i++;
+    const f0 = frames[i];
+    const f1 = frames[Math.min(i + 1, frames.length - 1)];
+    const t0 = f0.time, t1 = f1.time;
+    const alpha = t1 > t0 ? (t - t0) / (t1 - t0) : 0;
+    // Interpolate each point
+    const interp = {};
+    f0.points.forEach((p0, idx) => {
+      const p1 = f1.points[idx];
+      interp[p0.id] = {
+        x: p0.x + (p1.x - p0.x) * alpha,
+        y: p0.y + (p1.y - p0.y) * alpha,
+        z: p0.z + (p1.z - p0.z) * alpha,
+      };
+    });
+    return interp;
+  }
 
   function animate(currentTime) {
-    if (frameIndex >= frames.length) {
+    if (!startWallTime) startWallTime = currentTime;
+    const elapsed = (currentTime - startWallTime) / 1000; // seconds
+    let simTime = simStart + elapsed;
+    if (simTime > simEnd) simTime = simEnd;
+
+    // Interpolate positions
+    const interp = interpolatePoints(simTime);
+    globalThis.elements.forEach((el, elIndex) => {
+      const originalEl = originalElements[elIndex];
+      if (el.points && originalEl.points) {
+        el.points.forEach((p, pIndex) => {
+          const originalP = originalEl.points[pIndex];
+          const key = `${originalP.x.toFixed(6)},${originalP.y.toFixed(6)},${originalP.z.toFixed(6)}`;
+          const pointId = coordToIdMap.get(key);
+          if (pointId && interp[pointId]) {
+            const newPos = interp[pointId];
+            p.x = newPos.x;
+            p.y = newPos.y;
+            p.z = newPos.z;
+          }
+        });
+      }
+    });
+    render(false);
+
+    // FPS display (true browser FPS)
+    frameCount++;
+    if (currentTime - lastFpsUpdate > 500) {
+      const fps = (frameCount * 1000) / (currentTime - lastFpsUpdate);
+      if (fpsDisplay) fpsDisplay.textContent = `FPS: ${fps.toFixed(1)}`;
+      lastFpsUpdate = currentTime;
+      frameCount = 0;
+    }
+
+    if (simTime < simEnd) {
+      requestAnimationFrame(animate);
+    } else {
       // Restore original state when animation is done
       globalThis.elements = originalElements;
       originalElements = null;
       render();
-      if(fpsDisplay) fpsDisplay.textContent = "";
-      return;
+      if (fpsDisplay) fpsDisplay.textContent = "";
     }
-
-    const frame = frames[frameIndex];
-    if (!frame || !frame.points) {
-        frameIndex++;
-        requestAnimationFrame(animate);
-        return;
-    }
-
-    const pointPositions = new Map();
-    frame.points.forEach(p => {
-        pointPositions.set(p.id, { x: p.x, y: p.y, z: p.z });
-    });
-
-    // Update `globalThis.elements` by finding the original point, mapping it
-    // to a solver ID, and then applying the new position from the frame.
-    globalThis.elements.forEach((el, elIndex) => {
-        const originalEl = originalElements[elIndex];
-        if (el.points && originalEl.points) {
-            el.points.forEach((p, pIndex) => {
-                const originalP = originalEl.points[pIndex];
-                const key = `${originalP.x.toFixed(6)},${originalP.y.toFixed(6)},${originalP.z.toFixed(6)}`;
-                const pointId = coordToIdMap.get(key);
-                if (pointId && pointPositions.has(pointId)) {
-                    const newPos = pointPositions.get(pointId);
-                    p.x = newPos.x;
-                    p.y = newPos.y;
-                    p.z = newPos.z;
-                }
-            });
-        }
-    });
-
-    render(false);
-
-    // Calculate and display FPS
-    const deltaTime = currentTime - lastTime;
-    lastTime = currentTime;
-    const fps = 1000 / deltaTime;
-    if(fpsDisplay) fpsDisplay.textContent = `FPS: ${fps.toFixed(1)}`;
-
-    frameIndex++;
-    requestAnimationFrame(animate);
   }
 
   requestAnimationFrame(animate);
