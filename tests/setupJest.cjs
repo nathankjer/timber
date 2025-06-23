@@ -7,7 +7,7 @@ fetchMock.mockResponse(async (req) => {
   return JSON.stringify({});
 });
 
-// 2) stub out alert / prompt so they don’t interrupt the tests
+// 2) stub out alert / prompt so they don't interrupt the tests
 global.alert = jest.fn();
 global.prompt = jest.fn();
 
@@ -45,6 +45,39 @@ Element.prototype.getBoundingClientRect = () => ({
   top: 0,
 });
 
+// 5) initialize global variables that the code expects
+// (Do not set global.elements or global.selectedId here, let the code define them)
+global.globalProps = { g: 9.81, units: "metric" };
+global.unitConversionInfo = null;
+global.isRenderingProperties = false;
+global.sheets = [];
+global.sheetId = 1;
+global.nextId = Date.now();
+global.currentView = "+Z";
+global.rotationX = 0;
+global.rotationY = 0;
+global.rotationZ = 0;
+global.isRotating = false;
+global.rotationStartX = 0;
+global.rotationStartY = 0;
+global.rotationOrigX = 0;
+global.rotationOrigY = 0;
+global.rotationOrigZ = 0;
+global.zoom = 1;
+global.panX = 0;
+global.panY = 0;
+global.panStartX = 0;
+global.panStartY = 0;
+global.panOrigX = 0;
+global.panOrigY = 0;
+global.isPanning = false;
+global.dragId = null;
+global.dragStartX = 0;
+global.dragStartY = 0;
+global.dragOrig = null;
+global.dragMode = "body";
+global.lastCalculationResults = null;
+
 // 5) load index.js via a VM sandbox so its top-level defs go into that sandbox
 const fs = require("fs");
 const path = require("path");
@@ -73,3 +106,6 @@ vm.runInContext(code, sandbox, { filename: "index.js" });
 for (const key of Object.getOwnPropertyNames(sandbox)) {
   global[key] = sandbox[key];
 }
+// Ensure elements and selectedId are shared
+if (sandbox.elements) global.elements = sandbox.elements;
+if (sandbox.selectedId !== undefined) global.selectedId = sandbox.selectedId;

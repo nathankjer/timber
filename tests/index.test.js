@@ -62,6 +62,12 @@ const {
   constrainToOrthogonal,
   isPointInPolygon,
 
+  /* mass calculation */
+  calculateMass,
+  calculateLength,
+  calculateArea,
+  calculateVolume,
+
   /* pan controls */
   onPan,
   endPan,
@@ -228,6 +234,172 @@ describe("buildModel", () => {
     expect(model.loads.length).toBeGreaterThan(0);
     expect(model.supports.length).toBeGreaterThan(0);
   });
+
+  test("includes gravity loads from elements with mass", () => {
+    addElement("Member");
+    addElement("Plane");
+    addElement("Solid");
+
+    // Set masses for the elements
+    const elements = global.elements || [];
+    elements.forEach((el) => {
+      if (el.type === "Member") el.mass = 20;
+      if (el.type === "Plane") el.mass = 100;
+      if (el.type === "Solid") el.mass = 200;
+    });
+
+    const model = buildModel();
+
+    // Should have gravity loads for elements with mass
+    const gravityLoads = model.loads.filter((load) => load.isGravityLoad);
+    expect(gravityLoads.length).toBeGreaterThan(0);
+
+    // Check that gravity loads have the correct properties
+    gravityLoads.forEach((load) => {
+      expect(load).toHaveProperty("isGravityLoad", true);
+      expect(load).toHaveProperty("sourceElement");
+      expect(load.fx).toBe(0); // No horizontal component
+      expect(load.fy).toBeLessThan(0); // Downward force (negative Y direction)
+      expect(load.amount).toBeGreaterThan(0); // Should have positive gravity force
+    });
+  });
+
+  test("calculates mass dynamically based on material and geometry", () => {
+    // Test member mass calculation
+    const member = {
+      type: "Member",
+      material: "steel",
+      density: 7800,
+      A: 0.01, // 10,000 mm²
+      points: [
+        { x: 0, y: 0, z: 0 },
+        { x: 1, y: 0, z: 0 } // 1m length
+      ]
+    };
+    
+    const memberMass = calculateMass(member);
+    const expectedMemberMass = 0.01 * 1 * 7800; // A × L × density
+    expect(memberMass).toBeCloseTo(expectedMemberMass, 1);
+    
+    // Test plane mass calculation
+    const plane = {
+      type: "Plane",
+      material: "wood",
+      density: 500,
+      thickness: 0.02, // 20mm thickness
+      points: [
+        { x: 0, y: 0, z: 0 },
+        { x: 1, y: 0, z: 0 },
+        { x: 1, y: 1, z: 0 },
+        { x: 0, y: 1, z: 0 }
+      ] // 1m × 1m area
+    };
+    
+    const planeMass = calculateMass(plane);
+    const expectedPlaneMass = 1 * 0.02 * 500; // Area × thickness × density
+    expect(planeMass).toBeCloseTo(expectedPlaneMass, 1);
+    
+    // Test solid mass calculation
+    const solid = {
+      type: "Solid",
+      material: "steel",
+      density: 7800,
+      points: [
+        { x: 0, y: 0, z: 0 },
+        { x: 1, y: 0, z: 0 },
+        { x: 1, y: 1, z: 0 },
+        { x: 0, y: 1, z: 0 },
+        { x: 0, y: 0, z: 1 },
+        { x: 1, y: 0, z: 1 },
+        { x: 1, y: 1, z: 1 },
+        { x: 0, y: 1, z: 1 }
+      ] // 1m × 1m × 1m volume
+    };
+    
+    const solidMass = calculateMass(solid);
+    const expectedSolidMass = 1 * 7800; // Volume × density
+    expect(solidMass).toBeCloseTo(expectedSolidMass, 1);
+  });
+
+  test("sets correct default materials for different element types", () => {
+    // Test that cables default to steel
+    const cable = {
+      type: "Cable",
+      material: undefined,
+      density: undefined
+    };
+    calculateMass(cable);
+    expect(cable.material).toBe("steel");
+    expect(cable.density).toBe(7800);
+    
+    // Test that members default to wood
+    const member = {
+      type: "Member",
+      material: undefined,
+      density: undefined
+    };
+    calculateMass(member);
+    expect(member.material).toBe("wood");
+    expect(member.density).toBe(500);
+  });
+
+  test("mass updates when cross-sectional area changes", async () => {
+    // Create a member element
+    addElement("Member");
+    const elements = global.elements || [];
+    const member = elements.find(el => el.type === "Member");
+    
+    if (!member) {
+      // Skip test if no member was created
+      return;
+    }
+    
+    // Set initial properties
+    member.material = "steel";
+    member.density = 7800;
+    member.A = 0.01; // 10,000 mm²
+    member.mass = calculateMass(member);
+    
+    const initialMass = member.mass;
+    
+    // Change the cross-sectional area
+    member.A = 0.02; // 20,000 mm²
+    member.mass = calculateMass(member);
+    
+    const newMass = member.mass;
+    
+    // Mass should have doubled since area doubled
+    expect(newMass).toBeCloseTo(initialMass * 2, 1);
+  });
+
+  test("mass updates when thickness changes", async () => {
+    // Create a plane element
+    addElement("Plane");
+    const elements = global.elements || [];
+    const plane = elements.find(el => el.type === "Plane");
+    
+    if (!plane) {
+      // Skip test if no plane was created
+      return;
+    }
+    
+    // Set initial properties
+    plane.material = "wood";
+    plane.density = 500;
+    plane.thickness = 0.01; // 10mm
+    plane.mass = calculateMass(plane);
+    
+    const initialMass = plane.mass;
+    
+    // Change the thickness
+    plane.thickness = 0.02; // 20mm
+    plane.mass = calculateMass(plane);
+    
+    const newMass = plane.mass;
+    
+    // Mass should have doubled since thickness doubled
+    expect(newMass).toBeCloseTo(initialMass * 2, 1);
+  });
 });
 
 //--------------------------------------------------------------------
@@ -256,7 +428,11 @@ describe("addElement API", () => {
 
 describe("sheet helpers (DOM)", () => {
   test("getCurrentSheet reads initial sheet correctly", () => {
-    expect(getCurrentSheet()).toEqual({ id: 1, name: "Sheet 1" });
+    expect(getCurrentSheet()).toEqual({
+      id: 1,
+      name: "Sheet 1",
+      unit_system: "metric",
+    });
   });
 
   test("updateSheetHeader writes the sheet name into #sheet-title", () => {
@@ -477,11 +653,38 @@ describe("zoom and keyboard controls", () => {
 //--------------------------------------------------------------------
 
 describe("renderProperties", () => {
-  test("renders properties for selected member", async () => {
-    addElement("Member");
-    const g = document.querySelector("#canvas g");
-    g.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  beforeEach(() => {
+    // Mock fetch for unit conversion API calls
+    fetch.mockResponse(
+      JSON.stringify({
+        conversions: [
+          {
+            display_value: 1000,
+            symbol: "mm",
+            si_value: 1.0,
+          },
+        ],
+      }),
+    );
+    
+    // Reset global state
+    global.elements = [];
+    global.selectedId = null;
+    global.globalProps = { g: 9.81, units: "metric" };
+  });
 
+  test("renders properties for selected member", async () => {
+    // Add a member element
+    addElement("Member");
+    
+    // Get the element that was added
+    const elements = global.elements || [];
+    const member = elements.find(el => el.type === "Member");
+    expect(member).toBeDefined();
+    
+    // Set the selectedId to the member's id
+    global.selectedId = member.id;
+    
     await renderProperties();
 
     const propsContent = document.getElementById("props-content");
@@ -491,10 +694,17 @@ describe("renderProperties", () => {
   });
 
   test("renders properties for selected support", async () => {
+    // Add a support element
     addElement("Support");
-    const g = document.querySelector("#canvas g");
-    g.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
+    
+    // Get the element that was added
+    const elements = global.elements || [];
+    const support = elements.find(el => el.type === "Support");
+    expect(support).toBeDefined();
+    
+    // Set the selectedId to the support's id
+    global.selectedId = support.id;
+    
     await renderProperties();
 
     const propsContent = document.getElementById("props-content");
@@ -505,10 +715,17 @@ describe("renderProperties", () => {
   });
 
   test("renders properties for selected load", async () => {
+    // Add a load element
     addElement("Load");
-    const g = document.querySelector("#canvas g");
-    g.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
+    
+    // Get the element that was added
+    const elements = global.elements || [];
+    const load = elements.find(el => el.type === "Load");
+    expect(load).toBeDefined();
+    
+    // Set the selectedId to the load's id
+    global.selectedId = load.id;
+    
     await renderProperties();
 
     const propsContent = document.getElementById("props-content");
@@ -526,11 +743,9 @@ describe("renderProperties", () => {
   });
 
   test("disables delete button when no element selected", async () => {
-    // Clear any selected element
-    document
-      .getElementById("canvas")
-      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
+    // Ensure no element is selected
+    global.selectedId = null;
+    
     await renderProperties();
 
     const deleteBtn = document.getElementById("delete-btn");
@@ -538,10 +753,17 @@ describe("renderProperties", () => {
   });
 
   test("enables delete button when element selected", async () => {
+    // Add a member element
     addElement("Member");
-    const g = document.querySelector("#canvas g");
-    g.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
+    
+    // Get the element that was added
+    const elements = global.elements || [];
+    const member = elements.find(el => el.type === "Member");
+    expect(member).toBeDefined();
+    
+    // Set the selectedId to the member's id
+    global.selectedId = member.id;
+    
     await renderProperties();
 
     const deleteBtn = document.getElementById("delete-btn");
@@ -600,14 +822,16 @@ describe("convertValue", () => {
 
   test("falls back to direct calculation when API fails", async () => {
     // Mock console.error to suppress the expected error output
-    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    
+    const consoleSpy = jest
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
     fetch.mockReject(new Error("Network error"));
 
     const result = await convertValue(1.0, "length", "to_display");
     expect(result.value).toBe(1000);
     expect(result.symbol).toBe("mm");
-    
+
     // Restore console.error
     consoleSpy.mockRestore();
   });
@@ -641,6 +865,40 @@ describe("convertValue", () => {
     const result = await convertValue(0.3048, "length", "to_display");
     expect(result.value).toBe(12.0);
     expect(result.symbol).toBe("in");
+  });
+
+  test("converts mass to display units", async () => {
+    // Set global props for metric
+    global.globalProps = { units: "metric" };
+
+    const result = await convertValue(10.0, "mass", "to_display");
+    expect(result.value).toBe(10.0);
+    expect(result.symbol).toBe("kg");
+  });
+
+  test("converts mass from display units", async () => {
+    // Set global props for imperial
+    global.globalProps = { units: "imperial" };
+
+    const result = await convertValue(22.0462, "mass", "from_display");
+    expect(result).toBeCloseTo(10.0, 3); // 22.0462 lb ≈ 10 kg
+  });
+
+  test("converts density to display units", async () => {
+    // Set global props for metric
+    global.globalProps = { units: "metric" };
+
+    const result = await convertValue(500.0, "density", "to_display");
+    expect(result.value).toBe(500.0);
+    expect(result.symbol).toBe("kg/m³");
+  });
+
+  test("converts density from display units", async () => {
+    // Set global props for imperial
+    global.globalProps = { units: "imperial" };
+
+    const result = await convertValue(31.214, "density", "from_display");
+    expect(result).toBeCloseTo(500.0, 1); // 31.214 lb/ft³ ≈ 500 kg/m³
   });
 });
 

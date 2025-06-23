@@ -162,7 +162,7 @@ def test_record_action_all_branches_and_element_replacement():
         # First action with 1 element
         elem1 = [{"x": 1}]
         resp = client.post("/sheet/action", json={"sheet_id": sid, "elements": elem1})
-        assert resp.get_json() == {"status": "ok"}
+        assert resp.get_json() == {"status": "ok", "unit_system": "metric"}
         assert Element.query.filter_by(sheet_id=sid).count() == 1
         assert Action.query.filter_by(sheet_id=sid).count() == 1
 

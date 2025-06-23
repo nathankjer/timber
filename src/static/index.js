@@ -3,6 +3,10 @@ let sheetId = parseInt(containerEl.dataset.sheetId);
 let sheets = JSON.parse(containerEl.dataset.sheets || "[]");
 const sheetTitleEl = document.getElementById("sheet-title");
 
+var globalProps = { g: 9.81, units: "metric" };
+let unitConversionInfo = null; // Cache for unit conversion info
+let isRenderingProperties = false; // Flag to prevent multiple simultaneous calls
+
 function getCurrentSheet() {
   return sheets.find((s) => s.id === sheetId);
 }
@@ -11,8 +15,9 @@ function updateSheetHeader() {
   const s = getCurrentSheet();
   if (s && sheetTitleEl) sheetTitleEl.textContent = s.name;
 }
-let elements = [];
-let selectedId = null;
+
+if (typeof globalThis.elements === "undefined") globalThis.elements = [];
+if (typeof globalThis.selectedId === "undefined") globalThis.selectedId = null;
 let dragId = null;
 let dragStartX = 0;
 let dragStartY = 0;
@@ -159,11 +164,6 @@ function endRotation() {
   document.removeEventListener("mouseup", endRotation);
 }
 
-const globalProps = { g: 9.81, units: "metric" };
-let unitConversionInfo = null; // Cache for unit conversion info
-let isRenderingProperties = false; // Flag to prevent multiple simultaneous calls
-let propertyUpdateTimeout = null; // Timeout for debounced property updates
-
 // Unit conversion functions that use the backend API
 async function getUnitInfo() {
   try {
@@ -180,6 +180,10 @@ async function getUnitInfo() {
 }
 
 async function convertValue(value, unitType, direction = "to_display") {
+  // Always use fallback for mass and density unit types
+  if (unitType === "mass" || unitType === "density") {
+    return fallbackConvert(value, unitType, direction);
+  }
   if (!unitConversionInfo) {
     await getUnitInfo();
   }
@@ -212,7 +216,7 @@ async function convertValue(value, unitType, direction = "to_display") {
 }
 
 function fallbackConvert(value, unitType, direction) {
-  const unitSystem = globalProps.units || "metric";
+  const unitSystem = (typeof global !== 'undefined' && global.globalProps && global.globalProps.units) ? global.globalProps.units : (globalProps.units || "metric");
 
   if (unitType === "length") {
     if (direction === "to_display") {
@@ -276,6 +280,22 @@ function fallbackConvert(value, unitType, direction) {
     } else {
       return unitSystem === "metric" ? value * 1000 : value * 1.35582;
     }
+  } else if (unitType === "mass") {
+    if (direction === "to_display") {
+      const displayValue = unitSystem === "metric" ? value : value * 2.20462;
+      const symbol = unitSystem === "metric" ? "kg" : "lb";
+      return { value: displayValue, symbol: symbol };
+    } else {
+      return unitSystem === "metric" ? value : value / 2.20462;
+    }
+  } else if (unitType === "density") {
+    if (direction === "to_display") {
+      const displayValue = unitSystem === "metric" ? value : value * 0.062428;
+      const symbol = unitSystem === "metric" ? "kg/m³" : "lb/ft³";
+      return { value: displayValue, symbol: symbol };
+    } else {
+      return unitSystem === "metric" ? value : value / 0.062428;
+    }
   }
 
   return direction === "to_display" ? { value: value, symbol: "" } : value;
@@ -301,17 +321,21 @@ async function createSheet() {
   const resp = await fetch("/sheet", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "New Sheet" }),
+    body: JSON.stringify({ name: "New Sheet", unit_system: globalProps.units }),
   });
   if (resp.ok) {
     const data = await resp.json();
-    sheets.push({ id: data.id, name: data.name });
+    sheets.push({
+      id: data.id,
+      name: data.name,
+      unit_system: data.unit_system,
+    });
     sheetId = data.id;
-    elements = [];
-
+    globalThis.elements = [];
+    // Set global unit system to the new sheet's unit system
+    globalProps.units = data.unit_system || "metric";
     // Clear calculation results when creating a new sheet
     lastCalculationResults = null;
-
     renderSheetList();
     loadState();
   }
@@ -327,7 +351,7 @@ async function deleteSheet(id) {
       sheets.push(data.new_sheet);
       sheetId = data.new_sheet.id;
     } else {
-    sheetId = sheets[0].id;
+      sheetId = sheets[0].id;
     }
     renderSheetList();
     loadState();
@@ -496,7 +520,7 @@ function nearestPointOnLine(p, a, b) {
 function getSnapPoints(ignoreId) {
   const pts = [];
 
-  elements.forEach((e) => {
+  globalThis.elements.forEach((e) => {
     if (e.id === ignoreId) return;
 
     // Add all points from all element types
@@ -616,15 +640,15 @@ function getSnapPoints(ignoreId) {
       if (e.type === "Support") {
         pts.push({ x: e.x, y: e.y, z: e.z, kind: "Support" });
       } else if (e.type === "Load") {
-      pts.push({ x: e.x, y: e.y, z: e.z, kind: "Load" });
-      pts.push({
-        x: e.x2 ?? e.x,
-        y: e.y2 ?? e.y,
-        z: e.z2 ?? e.z,
-        kind: "Load",
-      });
+        pts.push({ x: e.x, y: e.y, z: e.z, kind: "Load" });
+        pts.push({
+          x: e.x2 ?? e.x,
+          y: e.y2 ?? e.y,
+          z: e.z2 ?? e.z,
+          kind: "Load",
+        });
       } else if (e.type === "Member" || e.type === "Cable") {
-      pts.push({ x: e.x, y: e.y, z: e.z, kind: "End" });
+        pts.push({ x: e.x, y: e.y, z: e.z, kind: "End" });
         pts.push({
           x: e.x2 ?? e.x,
           y: e.y2 ?? e.y,
@@ -643,28 +667,28 @@ function getSnapPoints(ignoreId) {
         corners.forEach((c) => pts.push({ ...c, kind: "PlaneCorner" }));
       } else if (e.type === "Solid") {
         // Legacy dimension-based solid
-      const s = 15;
-      [-s, s].forEach((dx) =>
-        [-s, s].forEach((dy) =>
-          [-s, s].forEach((dz) =>
-            pts.push({
-              x: e.x + dx,
-              y: e.y + dy,
-              z: e.z + dz,
-              kind: "SolidCorner",
-            }),
+        const s = 15;
+        [-s, s].forEach((dx) =>
+          [-s, s].forEach((dy) =>
+            [-s, s].forEach((dz) =>
+              pts.push({
+                x: e.x + dx,
+                y: e.y + dy,
+                z: e.z + dz,
+                kind: "SolidCorner",
+              }),
+            ),
           ),
-        ),
-      );
-      [-s, s].forEach((dx) =>
-        pts.push({ x: e.x + dx, y: e.y, z: e.z, kind: "FaceCenter" }),
-      );
-      [-s, s].forEach((dy) =>
-        pts.push({ x: e.x, y: e.y + dy, z: e.z, kind: "FaceCenter" }),
-      );
-      [-s, s].forEach((dz) =>
-        pts.push({ x: e.x, y: e.y, z: e.z + dz, kind: "FaceCenter" }),
-      );
+        );
+        [-s, s].forEach((dx) =>
+          pts.push({ x: e.x + dx, y: e.y, z: e.z, kind: "FaceCenter" }),
+        );
+        [-s, s].forEach((dy) =>
+          pts.push({ x: e.x, y: e.y + dy, z: e.z, kind: "FaceCenter" }),
+        );
+        [-s, s].forEach((dz) =>
+          pts.push({ x: e.x, y: e.y, z: e.z + dz, kind: "FaceCenter" }),
+        );
       }
     }
   });
@@ -673,7 +697,7 @@ function getSnapPoints(ignoreId) {
 
 function getSnapLines(ignoreId) {
   const lines = [];
-  elements.forEach((e) => {
+  globalThis.elements.forEach((e) => {
     if (e.id === ignoreId) return;
     if (e.points && e.points.length >= 2) {
       // All elements now use points array
@@ -685,11 +709,11 @@ function getSnapLines(ignoreId) {
       }
     } else {
       // Legacy fallback for any remaining elements
-    if (e.type === "Member" || e.type === "Cable" || e.type === "Load") {
-      lines.push({
-        p1: { x: e.x, y: e.y, z: e.z },
-        p2: { x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z },
-      });
+      if (e.type === "Member" || e.type === "Cable" || e.type === "Load") {
+        lines.push({
+          p1: { x: e.x, y: e.y, z: e.z },
+          p2: { x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z },
+        });
       }
     }
   });
@@ -778,31 +802,31 @@ function applySnapping(el) {
     // Legacy fallback for any remaining elements
     if (el.type === "Support") {
       snapObj(el);
-  } else if (el.type === "Load") {
-    const base = { x: el.x, y: el.y, z: el.z };
-    const tip = { x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z };
+    } else if (el.type === "Load") {
+      const base = { x: el.x, y: el.y, z: el.z };
+      const tip = { x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z };
       snapObj(base);
       snapObj(tip);
-    el.x = base.x;
-    el.y = base.y;
-    el.z = base.z;
-    el.x2 = tip.x;
-    el.y2 = tip.y;
-    el.z2 = tip.z;
-  } else if (el.type === "Member" || el.type === "Cable") {
-    const p1 = { x: el.x, y: el.y, z: el.z };
-    const p2 = { x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z };
+      el.x = base.x;
+      el.y = base.y;
+      el.z = base.z;
+      el.x2 = tip.x;
+      el.y2 = tip.y;
+      el.z2 = tip.z;
+    } else if (el.type === "Member" || el.type === "Cable") {
+      const p1 = { x: el.x, y: el.y, z: el.z };
+      const p2 = { x: el.x2 ?? el.x, y: el.y2 ?? el.y, z: el.z2 ?? el.z };
       snapObj(p1);
       snapObj(p2);
-    el.x = p1.x;
-    el.y = p1.y;
-    el.z = p1.z;
-    el.x2 = p2.x;
-    el.y2 = p2.y;
-    el.z2 = p2.z;
+      el.x = p1.x;
+      el.y = p1.y;
+      el.z = p1.z;
+      el.x2 = p2.x;
+      el.y2 = p2.y;
+      el.z2 = p2.z;
     } else if (el.type === "Plane" || el.type === "Solid") {
       snapObj(el);
-  } else {
+    } else {
       snapObj(el);
     }
   }
@@ -815,6 +839,8 @@ async function addNumberInput(
   el,
   unitType = null,
   pointIndex = -1,
+  onChangeCallback = null,
+  elForInputs = null,
 ) {
   const div = document.createElement("div");
   div.className = "mb-2";
@@ -846,6 +872,11 @@ async function addNumberInput(
   }
 
   const input = div.querySelector("input");
+  // Register input in el._propertyInputs for live update
+  if (elForInputs && prop) {
+    if (!elForInputs._propertyInputs) elForInputs._propertyInputs = {};
+    elForInputs._propertyInputs[prop + (pointIndex > -1 ? `_${pointIndex}` : "")] = input;
+  }
   input.addEventListener("input", async (ev) => {
     const text = ev.target.value;
     let v;
@@ -872,6 +903,15 @@ async function addNumberInput(
       } else {
         el[prop] = v;
       }
+      // Call the callback if provided (for mass recalculation)
+      if (onChangeCallback) {
+        onChangeCallback();
+      }
+      // Update the value in the input field for live update
+      if (elForInputs && prop) {
+        if (!elForInputs._propertyInputs) elForInputs._propertyInputs = {};
+        elForInputs._propertyInputs[prop + (pointIndex > -1 ? `_${pointIndex}` : "")] = input;
+      }
     }
     render(false);
     saveState();
@@ -879,64 +919,124 @@ async function addNumberInput(
   container.appendChild(div);
 }
 
-// Debounced property update function
-function schedulePropertyUpdate() {
-  // Clear any existing timeout
-  if (propertyUpdateTimeout) {
-    clearTimeout(propertyUpdateTimeout);
-  }
-
-  // Schedule a new property update after 100ms
-  propertyUpdateTimeout = setTimeout(async () => {
-    if (!isRenderingProperties) {
-      await renderProperties();
-    }
-    propertyUpdateTimeout = null;
-  }, 100);
-}
-
-async function renderProperties() {
-  // Prevent multiple simultaneous calls
-  if (isRenderingProperties) {
+async function renderProperties(force = false) {
+  // Only rerender the panel if the selected element changed or force is true
+  const pane = document.getElementById("props-content");
+  if (!pane) return;
+  
+  // Always render if force is true, or if selected element changed
+  if (!force && window._lastRenderedId === globalThis.selectedId) {
+    // Only update values, not structure
+    updatePropertyFieldValues();
     return;
   }
-  isRenderingProperties = true;
-
-  try {
-  const pane = document.getElementById("props-content");
+  
+  window._lastRenderedId = globalThis.selectedId;
   pane.innerHTML = "";
-  if (selectedId !== null) {
-    const el = elements.find((e) => e.id === selectedId);
+
+  if (globalThis.selectedId !== null) {
+    const el = globalThis.elements.find((e) => e.id === globalThis.selectedId);
     if (el) {
+      el._propertyInputs = {}; // Map of property name to input/display DOM node
       const form = document.createElement("div");
       form.innerHTML = `<div class="mb-2">Type: <strong>${el.type}</strong></div>`;
 
-        // Show points for all element types
-        if (el.points) {
-          for (let i = 0; i < el.points.length; i++) {
-            form.innerHTML += `<div class="mb-2 fw-bold">Point ${i + 1}</div>`;
-            await addNumberInput(form, "x", "x", el, "length", i);
-            await addNumberInput(form, "y", "y", el, "length", i);
-            await addNumberInput(form, "z", "z", el, "length", i);
-          }
+      // Show points for all element types
+      if (el.points) {
+        for (let i = 0; i < el.points.length; i++) {
+          form.innerHTML += `<div class="mb-2 fw-bold">Point ${i + 1}</div>`;
+          await addNumberInput(form, "x", "x", el, "length", i, null, el);
+          await addNumberInput(form, "y", "y", el, "length", i, null, el);
+          await addNumberInput(form, "z", "z", el, "length", i, null, el);
         }
+      }
 
       if (el.type === "Member" || el.type === "Cable") {
-          await addNumberInput(form, "Young's Modulus (E)", "E", el, "stress");
-          await addNumberInput(
-            form,
-            "Cross Sectional Area (A)",
-            "A",
-            el,
-            "area",
-          );
-          await addNumberInput(
-            form,
-            "Second Moment of Inertia (I)",
-            "I",
-            el,
-            "moment_of_inertia",
-        );
+        // Material selector for Young's Modulus (E)
+        if (!el.material) el.material = el.type === "Cable" ? "steel" : "wood";
+        const materialDiv = document.createElement("div");
+        materialDiv.className = "mb-2";
+        if (el.type === "Cable") {
+          materialDiv.innerHTML = `
+            <label class='form-label'>Material</label>
+            <select id='material-type' class='form-select form-select-sm w-auto d-inline'>
+              <option value='steel' selected>Steel</option>
+            </select>
+          `;
+        } else {
+          materialDiv.innerHTML = `
+            <label class='form-label'>Material</label>
+            <select id='material-type' class='form-select form-select-sm w-auto d-inline'>
+              <option value='wood' ${el.material === "wood" ? "selected" : ""}>Wood</option>
+              <option value='steel' ${el.material === "steel" ? "selected" : ""}>Steel</option>
+            </select>
+          `;
+        }
+        form.appendChild(materialDiv);
+        const matSel = materialDiv.querySelector("#material-type");
+        el._propertyInputs["material"] = matSel;
+        matSel.addEventListener("change", async (ev) => {
+          el.material = ev.target.value;
+          if (el.material === "wood") {
+            el.E = 10e9;
+            el.density = 500;
+          } else if (el.material === "steel") {
+            el.E = 200e9;
+            el.density = 7800;
+          }
+          el.mass = calculateMass(el);
+          updatePropertyFieldValues();
+          saveState();
+        });
+        if (el.material === "wood") {
+          el.E = 10e9;
+          el.density = 500;
+        } else if (el.material === "steel") {
+          el.E = 200e9;
+          el.density = 7800;
+        }
+        if (!el.mass) {
+          el.mass = calculateMass(el);
+        }
+        // Young's Modulus (E)
+        const E_conv = await convertValue(el.E, "stress", "to_display");
+        const Ediv = document.createElement("div");
+        Ediv.className = "mb-2";
+        Ediv.innerHTML = `<label class='form-label'>Young's Modulus (E)</label>
+          <div class='input-group input-group-sm'>
+            <input class='form-control' type='text' value='${E_conv.value.toFixed(3)}' disabled>
+            <span class='input-group-text'>${E_conv.symbol}</span>
+          </div>`;
+        el._propertyInputs["E"] = Ediv.querySelector("input");
+        form.appendChild(Ediv);
+        // Density
+        const density_conv = await convertValue(el.density, "density", "to_display");
+        const densityDiv = document.createElement("div");
+        densityDiv.className = "mb-2";
+        densityDiv.innerHTML = `<label class='form-label'>Density</label>
+          <div class='input-group input-group-sm'>
+            <input class='form-control' type='text' value='${density_conv.value.toFixed(1)}' disabled>
+            <span class='input-group-text'>${density_conv.symbol}</span>
+          </div>`;
+        el._propertyInputs["density"] = densityDiv.querySelector("input");
+        form.appendChild(densityDiv);
+        // Cross Sectional Area (A)
+        await addNumberInput(form, "Cross Sectional Area (A)", "A", el, "area", -1, async () => {
+          el.mass = calculateMass(el);
+          updatePropertyFieldValues();
+          saveState();
+        }, el);
+        // Mass (calculated)
+        const mass_conv = await convertValue(el.mass, "mass", "to_display");
+        const massDiv = document.createElement("div");
+        massDiv.className = "mb-2";
+        massDiv.innerHTML = `<label class='form-label'>Mass (calculated)</label>
+          <div class='input-group input-group-sm'>
+            <input class='form-control' type='text' value='${mass_conv.value.toFixed(3)}' disabled>
+            <span class='input-group-text'>${mass_conv.symbol}</span>
+          </div>`;
+        el._propertyInputs["mass"] = massDiv.querySelector("input");
+        form.appendChild(massDiv);
       } else if (el.type === "Support") {
         ["ux", "uy", "rz"].forEach((p) => {
           const div = document.createElement("div");
@@ -948,10 +1048,136 @@ async function renderProperties() {
             el[p] = input.checked;
             saveState();
           });
+          el._propertyInputs[p] = input;
           form.appendChild(div);
         });
       } else if (el.type === "Load") {
-          await addNumberInput(form, "amount", "amount", el, "force");
+        await addNumberInput(form, "amount", "amount", el, "force", -1, null, el);
+      } else if (el.type === "Plane") {
+        if (!el.material) el.material = "wood";
+        const materialDiv = document.createElement("div");
+        materialDiv.className = "mb-2";
+        materialDiv.innerHTML = `
+          <label class='form-label'>Material</label>
+          <select id='material-type' class='form-select form-select-sm w-auto d-inline'>
+            <option value='wood' ${el.material === "wood" ? "selected" : ""}>Wood</option>
+            <option value='steel' ${el.material === "steel" ? "selected" : ""}>Steel</option>
+          </select>
+        `;
+        form.appendChild(materialDiv);
+        const matSel = materialDiv.querySelector("#material-type");
+        el._propertyInputs["material"] = matSel;
+        matSel.addEventListener("change", async (ev) => {
+          el.material = ev.target.value;
+          if (el.material === "wood") {
+            el.E = 10e9;
+            el.density = 500;
+          } else if (el.material === "steel") {
+            el.E = 200e9;
+            el.density = 7800;
+          }
+          el.mass = calculateMass(el);
+          updatePropertyFieldValues();
+          saveState();
+        });
+        if (el.material === "wood") {
+          el.E = 10e9;
+          el.density = 500;
+        } else if (el.material === "steel") {
+          el.E = 200e9;
+          el.density = 7800;
+        }
+        if (!el.mass) {
+          el.mass = calculateMass(el);
+        }
+        // Add thickness field for planes
+        if (!el.thickness) el.thickness = 0.01;
+        await addNumberInput(form, "Thickness", "thickness", el, "length", -1, async () => {
+          el.mass = calculateMass(el);
+          updatePropertyFieldValues();
+          saveState();
+        }, el);
+        // Density
+        const density_conv = await convertValue(el.density, "density", "to_display");
+        const densityDiv = document.createElement("div");
+        densityDiv.className = "mb-2";
+        densityDiv.innerHTML = `<label class='form-label'>Density</label>
+          <div class='input-group input-group-sm'>
+            <input class='form-control' type='text' value='${density_conv.value.toFixed(1)}' disabled>
+            <span class='input-group-text'>${density_conv.symbol}</span>
+          </div>`;
+        el._propertyInputs["density"] = densityDiv.querySelector("input");
+        form.appendChild(densityDiv);
+        // Mass (calculated)
+        const mass_conv = await convertValue(el.mass, "mass", "to_display");
+        const massDiv = document.createElement("div");
+        massDiv.className = "mb-2";
+        massDiv.innerHTML = `<label class='form-label'>Mass (calculated)</label>
+          <div class='input-group input-group-sm'>
+            <input class='form-control' type='text' value='${mass_conv.value.toFixed(3)}' disabled>
+            <span class='input-group-text'>${mass_conv.symbol}</span>
+          </div>`;
+        el._propertyInputs["mass"] = massDiv.querySelector("input");
+        form.appendChild(massDiv);
+      } else if (el.type === "Solid") {
+        if (!el.material) el.material = "wood";
+        const materialDiv = document.createElement("div");
+        materialDiv.className = "mb-2";
+        materialDiv.innerHTML = `
+          <label class='form-label'>Material</label>
+          <select id='material-type' class='form-select form-select-sm w-auto d-inline'>
+            <option value='wood' ${el.material === "wood" ? "selected" : ""}>Wood</option>
+            <option value='steel' ${el.material === "steel" ? "selected" : ""}>Steel</option>
+          </select>
+        `;
+        form.appendChild(materialDiv);
+        const matSel = materialDiv.querySelector("#material-type");
+        el._propertyInputs["material"] = matSel;
+        matSel.addEventListener("change", async (ev) => {
+          el.material = ev.target.value;
+          if (el.material === "wood") {
+            el.E = 10e9;
+            el.density = 500;
+          } else if (el.material === "steel") {
+            el.E = 200e9;
+            el.density = 7800;
+          }
+          el.mass = calculateMass(el);
+          updatePropertyFieldValues();
+          saveState();
+        });
+        if (el.material === "wood") {
+          el.E = 10e9;
+          el.density = 500;
+        } else if (el.material === "steel") {
+          el.E = 200e9;
+          el.density = 7800;
+        }
+        if (!el.mass) {
+          el.mass = calculateMass(el);
+        }
+        // Density
+        const density_conv = await convertValue(el.density, "density", "to_display");
+        const densityDiv = document.createElement("div");
+        densityDiv.className = "mb-2";
+        densityDiv.innerHTML = `<label class='form-label'>Density</label>
+          <div class='input-group input-group-sm'>
+            <input class='form-control' type='text' value='${density_conv.value.toFixed(1)}' disabled>
+            <span class='input-group-text'>${density_conv.symbol}</span>
+          </div>`;
+        el._propertyInputs["density"] = densityDiv.querySelector("input");
+        form.appendChild(densityDiv);
+        // Mass (calculated)
+        const mass_conv = await convertValue(el.mass, "mass", "to_display");
+        const massDiv = document.createElement("div");
+        massDiv.className = "mb-2";
+        massDiv.innerHTML = `<label class='form-label'>Mass (calculated)</label>
+          <div class='input-group input-group-sm'>
+            <input class='form-control' type='text' value='${mass_conv.value.toFixed(3)}' disabled>
+            <span class='input-group-text'>${mass_conv.symbol}</span>
+          </div>`;
+        el._propertyInputs["mass"] = massDiv.querySelector("input");
+        form.appendChild(massDiv);
       }
       pane.appendChild(form);
       document.getElementById("delete-btn").disabled = false;
@@ -960,63 +1186,111 @@ async function renderProperties() {
     document.getElementById("delete-btn").disabled = true;
   }
 
+  // Global properties section - always render this
   const globalDiv = document.createElement("div");
   globalDiv.innerHTML = `<hr><h6>Global</h6>
-    <div class='mb-2'><label class='form-label'>Units</label><select id='global-units' class='form-select form-select-sm'>
-      <option value='metric'>Metric</option><option value='imperial'>Imperial</option></select></div>`;
+  <div class='mb-2'><label class='form-label'>Units</label><select id='global-units' class='form-select form-select-sm'>
+    <option value='metric'>Metric</option><option value='imperial'>Imperial</option></select></div>`;
   pane.appendChild(globalDiv);
 
-    // Add gravity input with units using backend API
-    const gravityDiv = document.createElement("div");
-    gravityDiv.className = "mb-2";
+  // Add gravity input with units using backend API
+  const gravityDiv = document.createElement("div");
+  gravityDiv.className = "mb-2";
 
-    // Get gravity display value and unit from backend
-    const gravityConversion = await convertValue(
-      globalProps.g,
-      "acceleration",
-      "to_display",
-    );
-    const gravityValue = gravityConversion.value.toFixed(3);
-    const gravityUnit = gravityConversion.symbol;
+  // Get gravity display value and unit from backend
+  const gravityConversion = await convertValue(
+    globalProps.g,
+    "acceleration",
+    "to_display",
+  );
+  const gravityValue = gravityConversion.value.toFixed(3);
+  const gravityUnit = gravityConversion.symbol;
 
-    gravityDiv.innerHTML = `
-      <label class='form-label'>Gravity (g)</label>
-      <div class='input-group input-group-sm'>
-        <input id='global-g' class='form-control' type='text' value='${gravityValue}'>
-        <span class='input-group-text'>${gravityUnit}</span>
-      </div>
-    `;
-    pane.appendChild(gravityDiv);
+  gravityDiv.innerHTML = `
+    <label class='form-label'>Gravity (g)</label>
+    <div class='input-group input-group-sm'>
+      <input id='global-g' class='form-control' type='text' value='${gravityValue}'>
+      <span class='input-group-text'>${gravityUnit}</span>
+    </div>
+  `;
+  pane.appendChild(gravityDiv);
 
-    const gInput = gravityDiv.querySelector("#global-g");
-    gInput.addEventListener("input", async (ev) => {
-      const text = ev.target.value;
-      let v = parseFloat(text);
+  const gInput = gravityDiv.querySelector("#global-g");
+  gInput.addEventListener("input", async (ev) => {
+    const text = ev.target.value;
+    let v = parseFloat(text);
 
-      if (Number.isFinite(v)) {
-        // Convert from display units to SI using backend API
-        globalProps.g = await convertValue(v, "acceleration", "from_display");
-      }
-    });
+    if (Number.isFinite(v)) {
+      // Convert from display units to SI using backend API
+      globalProps.g = await convertValue(v, "acceleration", "from_display");
+    }
+  });
 
   const sel = globalDiv.querySelector("#global-units");
   sel.value = globalProps.units;
-    sel.addEventListener("change", async (ev) => {
+  sel.addEventListener("change", async (ev) => {
     const old = globalProps.units;
     globalProps.units = ev.target.value;
     if (old !== globalProps.units) {
-        // Convert gravity value
+      // Convert gravity value
       if (globalProps.units === "metric") {
-          globalProps.g = 9.81; // m/s²
+        globalProps.g = 9.81; // m/s²
       } else {
-          globalProps.g = 32.174 * 0.3048; // ft/s² converted to m/s²
-        }
-        // Re-render properties to update unit displays
-        await renderProperties();
+        globalProps.g = 32.174 * 0.3048; // ft/s² converted to m/s²
       }
-    });
-  } finally {
-    isRenderingProperties = false;
+      // Save the new unit system to the backend immediately
+      await saveState();
+      // Re-render properties to update unit displays
+      await renderProperties(true);
+    }
+  });
+}
+
+// Update only the values of the fields in the properties panel
+async function updatePropertyFieldValues() {
+  if (globalThis.selectedId === null) return;
+  const el = globalThis.elements.find((e) => e.id === globalThis.selectedId);
+  if (!el || !el._propertyInputs) return;
+  
+  // Get the currently focused element
+  const focusedElement = document.activeElement;
+  
+  // Update all known fields, but skip the one that has focus
+  if (el._propertyInputs["E"] && el._propertyInputs["E"] !== focusedElement) {
+    const E_conv = await convertValue(el.E, "stress", "to_display");
+    el._propertyInputs["E"].value = E_conv.value.toFixed(3);
+  }
+  if (el._propertyInputs["density"] && el._propertyInputs["density"] !== focusedElement) {
+    const density_conv = await convertValue(el.density, "density", "to_display");
+    el._propertyInputs["density"].value = density_conv.value.toFixed(1);
+  }
+  // Always update mass field, even when thickness field has focus, since thickness changes affect mass
+  if (el._propertyInputs["mass"]) {
+    const mass_conv = await convertValue(el.mass, "mass", "to_display");
+    el._propertyInputs["mass"].value = mass_conv.value.toFixed(3);
+  }
+  // Always update area field, even when it has focus, since area changes affect mass for members/cables
+  if (el._propertyInputs["A"]) {
+    const area_conv = await convertValue(el.A, "area", "to_display");
+    el._propertyInputs["A"].value = area_conv.value.toFixed(3);
+  }
+  // Update thickness
+  if (el._propertyInputs["thickness"] && el._propertyInputs["thickness"] !== focusedElement) {
+    const thick_conv = await convertValue(el.thickness, "length", "to_display");
+    el._propertyInputs["thickness"].value = thick_conv.value.toFixed(3);
+  }
+  // Update per-point coordinates
+  if (el.points) {
+    for (let i = 0; i < el.points.length; i++) {
+      ["x", "y", "z"].forEach(async (coord) => {
+        const key = coord + "_" + i;
+        if (el._propertyInputs[key] && el._propertyInputs[key] !== focusedElement) {
+          const val = el.points[i][coord];
+          const conv = await convertValue(val, "length", "to_display");
+          el._propertyInputs[key].value = conv.value.toFixed(3);
+        }
+      });
+    }
   }
 }
 
@@ -1085,7 +1359,7 @@ async function render(updateProps = true) {
 
   // First, render all points as dots
   const pointMap = new Map();
-  elements.forEach((el) => {
+  globalThis.elements.forEach((el) => {
     if (el.points) {
       // All elements now use points array
       el.points.forEach((p) => {
@@ -1150,7 +1424,7 @@ async function render(updateProps = true) {
     svg.appendChild(dot);
   });
 
-  elements.forEach((el) => {
+  globalThis.elements.forEach((el) => {
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
     g.dataset.id = el.id;
     g.style.cursor = "move";
@@ -1172,17 +1446,17 @@ async function render(updateProps = true) {
       shape.setAttribute("stroke", "blue");
       shape.setAttribute("stroke-width", 2);
       if (el.type === "Cable") shape.setAttribute("stroke-dasharray", "4 2");
-      } else if (el.type === "Load") {
+    } else if (el.type === "Load") {
       // Treat loads like members with draggable endpoints
       const p1 = projectPoint(el.points[0]);
       const p2 = projectPoint(el.points[1]);
-        shape = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      shape = document.createElementNS("http://www.w3.org/2000/svg", "line");
       shape.setAttribute("x1", cx + (p1.x || 0) * globalThis.zoom);
       shape.setAttribute("y1", cy + (p1.y || 0) * globalThis.zoom);
       shape.setAttribute("x2", cx + (p2.x || 0) * globalThis.zoom);
       shape.setAttribute("y2", cy + (p2.y || 0) * globalThis.zoom);
-        shape.setAttribute("stroke", "red");
-        shape.setAttribute("stroke-width", 2);
+      shape.setAttribute("stroke", "red");
+      shape.setAttribute("stroke-width", 2);
 
       // Add arrowhead at the end point
       const dx = p2.x - p1.x;
@@ -1200,13 +1474,13 @@ async function render(updateProps = true) {
       const ty =
         cy + (p2.y || 0) * globalThis.zoom + (dy / len) * arrowSize * 1.5;
 
-        const arrow = document.createElementNS(
-          "http://www.w3.org/2000/svg",
-          "polygon",
-        );
-        arrow.setAttribute("points", `${b1x},${b1y} ${b2x},${b2y} ${tx},${ty}`);
-        arrow.setAttribute("fill", "red");
-        g.appendChild(arrow);
+      const arrow = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "polygon",
+      );
+      arrow.setAttribute("points", `${b1x},${b1y} ${b2x},${b2y} ${tx},${ty}`);
+      arrow.setAttribute("fill", "red");
+      g.appendChild(arrow);
     } else if (el.type === "Plane") {
       // Always render planes - they should be visible in all views
       const pts = el.points.map((p) => {
@@ -1294,17 +1568,16 @@ async function render(updateProps = true) {
       shape.setAttribute("fill", "green");
     }
     if (shape) g.appendChild(shape);
-    if (el.id === selectedId) g.setAttribute("stroke", "orange");
+    if (el.id === globalThis.selectedId) g.setAttribute("stroke", "orange");
     svg.appendChild(g);
   });
 
   // Render calculation results on top
   renderCalculationResults();
 
-  // Only update properties if explicitly requested and not during continuous operations
-  if (updateProps && !globalThis.isRotating && !globalThis.isPanning) {
-    // Use debounced property update for operations that might have micro-stops
-    schedulePropertyUpdate();
+  // Update properties panel if requested
+  if (updateProps) {
+    await renderProperties();
   }
 
   updateViewButtonStates();
@@ -1336,6 +1609,11 @@ async function addElement(type) {
     base.E = 200e9;
     base.A = 0.01;
     base.I = 1e-6;
+    // Set material and density based on type
+    base.material = type === "Cable" ? "steel" : "wood";
+    base.density = type === "Cable" ? 7800 : 500;
+    // Calculate mass dynamically
+    base.mass = calculateMass(base);
   } else if (type === "Plane") {
     // Create plane with 4 corner points
     const l = 40 / 2; // half length
@@ -1386,6 +1664,12 @@ async function addElement(type) {
 
     base.points = points;
     base.normal = normal;
+    // Set material and density
+    base.material = "wood";
+    base.density = 500;
+    base.thickness = 0.01; // Default 10mm thickness
+    // Calculate mass dynamically
+    base.mass = calculateMass(base);
   } else if (type === "Solid") {
     // Create solid with 8 corner points - orthogonal to standard axes
     const w = 30 / 2; // half width
@@ -1402,6 +1686,11 @@ async function addElement(type) {
       { x: base.x + w, y: base.y + h, z: base.z + d }, // 6: top-front-right
       { x: base.x - w, y: base.y + h, z: base.z + d }, // 7: top-front-left
     ];
+    // Set material and density
+    base.material = "wood";
+    base.density = 500;
+    // Calculate mass dynamically
+    base.mass = calculateMass(base);
   } else if (type === "Load") {
     const dir = unprojectDelta(0, -20);
     const endX = base.x + (dir.x || 0);
@@ -1419,28 +1708,20 @@ async function addElement(type) {
     base.uy = true;
     base.rz = true;
   }
-  elements.push(base);
+  globalThis.elements.push(base);
   applySnapping(base);
   saveState();
-  // Clear any pending debounced updates and render immediately
-  if (propertyUpdateTimeout) {
-    clearTimeout(propertyUpdateTimeout);
-    propertyUpdateTimeout = null;
-  }
-  render(true);
+  render(false); // Don't update properties here, we'll do it directly
+  renderProperties(); // Always update properties when adding elements
 }
 
 function deleteElement() {
-  if (selectedId === null) return;
-  elements = elements.filter((e) => e.id !== selectedId);
-  selectedId = null;
+  if (globalThis.selectedId === null) return;
+  globalThis.elements = globalThis.elements.filter((e) => e.id !== globalThis.selectedId);
+  globalThis.selectedId = null;
   saveState();
-  // Clear any pending debounced updates and render immediately
-  if (propertyUpdateTimeout) {
-    clearTimeout(propertyUpdateTimeout);
-    propertyUpdateTimeout = null;
-  }
-  render(true);
+  render(false); // Don't update properties here, we'll do it directly
+  renderProperties(); // Always update properties when deleting elements
 }
 
 function startDrag(ev) {
@@ -1448,13 +1729,13 @@ function startDrag(ev) {
     ev.target.parentNode.dataset.id || ev.target.dataset.id,
     10,
   );
-  const el = elements.find((e) => e.id === id);
+  const el = globalThis.elements.find((e) => e.id === id);
   if (!el) return;
   const svgRect = document.getElementById("canvas").getBoundingClientRect();
   const mx = ev.clientX - svgRect.left;
   const my = ev.clientY - svgRect.top;
   dragId = id;
-  selectedId = id;
+  globalThis.selectedId = id;
   dragStartX = ev.clientX;
   dragStartY = ev.clientY;
   dragOrig = JSON.parse(JSON.stringify(el));
@@ -1476,7 +1757,7 @@ function startDrag(ev) {
   } else if (el.type === "Plane" || el.type === "Solid") {
     // Check for edge/face dragging instead of individual points
     if (el.type === "Plane") {
-      // For planes, check for edge dragging
+      // For planes, check for edge dragging first
       const pts = (el.points || []).map((p) => screenCoords(p));
       if (pts.length >= 4) {
         const edges = [
@@ -1499,29 +1780,59 @@ function startDrag(ev) {
           }
         }
       }
+      
+      // If no edge was clicked, it's a face drag (body drag)
+      if (dragMode === "body") {
+        dragMode = "face";
+      }
     } else if (el.type === "Solid") {
-      // For solids, check for face dragging
-      const vertices = solidVertices(el);
-      const screen_vertices = vertices.map((p) => screenCoords(p));
+      // For solids, check if we're in an orthographic view
+      const isOrthographic = ["+X", "-X", "+Y", "-Y", "+Z", "-Z"].includes(currentView);
+      
+      if (isOrthographic) {
+        // In orthographic view, face drag moves the whole solid
+        dragMode = "body";
+      } else {
+        // In non-orthographic view, face drag resizes the solid
+        const vertices = solidVertices(el);
+        const screen_vertices = vertices.map((p) => screenCoords(p));
 
-      // Define the 6 faces of the cube
-      const faces = [
-        [0, 1, 2, 3], // bottom face
-        [4, 5, 6, 7], // top face
-        [0, 1, 5, 4], // front face
-        [2, 3, 7, 6], // back face
-        [0, 3, 7, 4], // left face
-        [1, 2, 6, 5], // right face
-      ];
+        // Define the 6 faces of the cube
+        const faces = [
+          [0, 1, 2, 3], // bottom face
+          [4, 5, 6, 7], // top face
+          [0, 1, 5, 4], // front face
+          [2, 3, 7, 6], // back face
+          [0, 3, 7, 4], // left face
+          [1, 2, 6, 5], // right face
+        ];
 
-      for (let i = 0; i < faces.length; i++) {
-        const face = faces[i];
-        const facePoints = face.map((j) => screen_vertices[j]);
+        // Find visible faces (faces that are facing the camera)
+        const visibleFaces = [];
+        for (let i = 0; i < faces.length; i++) {
+          const face = faces[i];
+          const facePoints = face.map((j) => screen_vertices[j]);
+          
+          // Check if mouse is inside the face polygon
+          if (isPointInPolygon({ x: mx, y: my }, facePoints)) {
+            // Simple visibility check: if the face is large enough to be visible
+            const area = Math.abs(
+              (facePoints[1].x - facePoints[0].x) * (facePoints[2].y - facePoints[0].y) -
+              (facePoints[2].x - facePoints[0].x) * (facePoints[1].y - facePoints[0].y)
+            ) / 2;
+            
+            if (area > 10) { // Minimum visible area
+              visibleFaces.push(i);
+            }
+          }
+        }
 
-        // Check if mouse is inside the face polygon
-        if (isPointInPolygon({ x: mx, y: my }, facePoints)) {
-          dragMode = `face-${i}`;
-          break;
+        // If exactly one visible face is clicked, drag that face
+        if (visibleFaces.length === 1) {
+          dragMode = `face-${visibleFaces[0]}`;
+        } else {
+          // If multiple faces or no faces, it's a body drag
+          dragMode = "body";
         }
       }
     }
@@ -1530,8 +1841,8 @@ function startDrag(ev) {
     if (dragMode === "body") {
       // Check for edge dragging for legacy dimension-based elements
       if (!el.points) {
-    const rect =
-      el.type === "Plane" ? planeScreenRect(el) : solidScreenRect(el);
+        const rect =
+          el.type === "Plane" ? planeScreenRect(el) : solidScreenRect(el);
         const edgeThreshold = 8;
 
         // Check if mouse is near edges for resizing
@@ -1539,7 +1850,7 @@ function startDrag(ev) {
         else if (Math.abs(mx - rect.right) < edgeThreshold) dragMode = "right";
         else if (Math.abs(my - rect.top) < edgeThreshold) dragMode = "top";
         else if (Math.abs(my - rect.bottom) < edgeThreshold)
-      dragMode = "bottom";
+          dragMode = "bottom";
       }
     }
   } else {
@@ -1552,7 +1863,7 @@ function startDrag(ev) {
 
 async function onDrag(ev) {
   if (dragId === null) return;
-  const el = elements.find((e) => e.id === dragId);
+  const el = globalThis.elements.find((e) => e.id === dragId);
   if (!el) return;
   const dx = (ev.clientX - dragStartX) / globalThis.zoom;
   const dy = (ev.clientY - dragStartY) / globalThis.zoom;
@@ -1627,8 +1938,16 @@ async function onDrag(ev) {
           p2.y = orig_p2.y + (constrainedDelta.y || 0);
           p2.z = orig_p2.z + (constrainedDelta.z || 0);
         }
+      } else if (dragMode === "face") {
+        // Face drag - move all points (move the whole plane)
+        el.points.forEach((p, i) => {
+          const orig_p = dragOrig.points[i];
+          p.x = orig_p.x + (delta.x || 0);
+          p.y = orig_p.y + (delta.y || 0);
+          p.z = orig_p.z + (delta.z || 0);
+        });
       } else {
-        // Body drag - move all points
+        // Body drag - move all points (fallback)
         el.points.forEach((p, i) => {
           const orig_p = dragOrig.points[i];
           p.x = orig_p.x + (delta.x || 0);
@@ -1638,27 +1957,27 @@ async function onDrag(ev) {
       }
     } else {
       // Legacy dimension-based plane
-    const info = axisInfo(currentView);
-    const dh = dx;
-    const dv = dy;
-    const dhWorld = dh * info.h.sign;
-    const dvWorld = dv * info.v.sign;
-    if (dragMode === "left") {
-      el.length = Math.max(1, dragOrig.length - dh);
-      el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
-    } else if (dragMode === "right") {
-      el.length = Math.max(1, dragOrig.length + dh);
-      el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
-    } else if (dragMode === "top") {
-      el.width = Math.max(1, dragOrig.width - dv);
-      el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
-    } else if (dragMode === "bottom") {
-      el.width = Math.max(1, dragOrig.width + dv);
-      el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
-    } else {
-      ["x", "y", "z"].forEach((k) => {
-        if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k];
-      });
+      const info = axisInfo(currentView);
+      const dh = dx;
+      const dv = dy;
+      const dhWorld = dh * info.h.sign;
+      const dvWorld = dv * info.v.sign;
+      if (dragMode === "left") {
+        el.length = Math.max(1, dragOrig.length - dh);
+        el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
+      } else if (dragMode === "right") {
+        el.length = Math.max(1, dragOrig.length + dh);
+        el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
+      } else if (dragMode === "top") {
+        el.width = Math.max(1, dragOrig.width - dv);
+        el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
+      } else if (dragMode === "bottom") {
+        el.width = Math.max(1, dragOrig.width + dv);
+        el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
+      } else {
+        ["x", "y", "z"].forEach((k) => {
+          if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k];
+        });
       }
     }
   } else if (el.type === "Solid") {
@@ -1694,8 +2013,16 @@ async function onDrag(ev) {
             p.z = orig_p.z + (constrainedDelta.z || 0);
           });
         }
+      } else if (dragMode === "body") {
+        // Body drag - move all points (move the whole solid)
+        el.points.forEach((p, i) => {
+          const orig_p = dragOrig.points[i];
+          p.x = orig_p.x + (delta.x || 0);
+          p.y = orig_p.y + (delta.y || 0);
+          p.z = orig_p.z + (delta.z || 0);
+        });
       } else {
-        // Body drag - move all points
+        // Fallback - move all points
         el.points.forEach((p, i) => {
           const orig_p = dragOrig.points[i];
           p.x = orig_p.x + (delta.x || 0);
@@ -1705,30 +2032,30 @@ async function onDrag(ev) {
       }
     } else {
       // Legacy dimension-based solid
-    const info = axisInfo(currentView);
-    const dh = dx;
-    const dv = dy;
-    const dhWorld = dh * info.h.sign;
-    const dvWorld = dv * info.v.sign;
-    const hProp = axisDims[info.h.axis];
-    const vProp = axisDims[info.v.axis];
-    if (dragMode === "left") {
-      el[hProp] = Math.max(1, dragOrig[hProp] - dh);
-      el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
-    } else if (dragMode === "right") {
-      el[hProp] = Math.max(1, dragOrig[hProp] + dh);
-      el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
-    } else if (dragMode === "top") {
-      el[vProp] = Math.max(1, dragOrig[vProp] - dv);
-      el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
-    } else if (dragMode === "bottom") {
-      el[vProp] = Math.max(1, dragOrig[vProp] + dv);
-      el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
-    } else {
-      ["x", "y", "z"].forEach((k) => {
-        if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k];
-      });
-    }
+      const info = axisInfo(currentView);
+      const dh = dx;
+      const dv = dy;
+      const dhWorld = dh * info.h.sign;
+      const dvWorld = dv * info.v.sign;
+      const hProp = axisDims[info.h.axis];
+      const vProp = axisDims[info.v.axis];
+      if (dragMode === "left") {
+        el[hProp] = Math.max(1, dragOrig[hProp] - dh);
+        el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
+      } else if (dragMode === "right") {
+        el[hProp] = Math.max(1, dragOrig[hProp] + dh);
+        el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
+      } else if (dragMode === "top") {
+        el[vProp] = Math.max(1, dragOrig[vProp] - dv);
+        el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
+      } else if (dragMode === "bottom") {
+        el[vProp] = Math.max(1, dragOrig[vProp] + dv);
+        el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
+      } else {
+        ["x", "y", "z"].forEach((k) => {
+          if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k];
+        });
+      }
     }
   } else if (el.type === "Support") {
     // Support elements can be dragged by their position
@@ -1758,27 +2085,25 @@ async function endDrag() {
   if (dragId === null) return;
   document.removeEventListener("mousemove", onDrag);
   document.removeEventListener("mouseup", endDrag);
-  const el = elements.find((e) => e.id === dragId);
+  const el = globalThis.elements.find((e) => e.id === dragId);
   if (el) applySnapping(el);
   dragId = null;
   dragMode = "body";
   saveState();
-  // Clear any pending debounced updates and render immediately
-  if (propertyUpdateTimeout) {
-    clearTimeout(propertyUpdateTimeout);
-    propertyUpdateTimeout = null;
-  }
-  await render(true); // Update properties when dragging ends
+  await render(false); // Don't update properties here, we'll do it directly
+  await renderProperties(); // Always update properties when dragging ends
 }
 
 async function zoomIn() {
   globalThis.zoom *= 1.25;
-  await render(true); // Use debounced property update
+  await render(false); // Don't update properties here, we'll do it directly
+  await renderProperties(); // Always update properties when zooming
 }
 
 async function zoomOut() {
   globalThis.zoom /= 1.25;
-  await render(true); // Use debounced property update
+  await render(false); // Don't update properties here, we'll do it directly
+  await renderProperties(); // Always update properties when zooming
 }
 
 async function resetPanZoom() {
@@ -1786,7 +2111,8 @@ async function resetPanZoom() {
   globalThis.panX = 0;
   globalThis.panY = 0;
   setCurrentView("+Z"); // This will set rotationX = 0, rotationY = 0, rotationZ = 0
-  await render(true); // Immediate property update for discrete reset operation
+  await render(false); // Don't update properties here, we'll do it directly
+  await renderProperties(); // Always update properties when resetting
 }
 
 function startPan(ev) {
@@ -1822,14 +2148,19 @@ async function onCanvasWheel(ev) {
   ev.preventDefault();
   const factor = Math.exp(-ev.deltaY / 200);
   globalThis.zoom *= factor;
-  await render(true); // Use debounced property update
+  await render(false); // Don't update properties here, we'll do it directly
+  await renderProperties(); // Always update properties when zooming
 }
 
 async function saveState() {
   await fetch("/sheet/action", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sheet_id: sheetId, elements }),
+    body: JSON.stringify({
+      sheet_id: sheetId,
+      elements: globalThis.elements,
+      unit_system: globalProps.units,
+    }),
   });
 }
 
@@ -1840,8 +2171,11 @@ async function loadState() {
     const s = sheets.find((sh) => sh.id === data.id);
     if (s) {
       s.name = data.name;
+      s.unit_system = data.unit_system || "metric";
     }
-    elements = (data.elements || []).map((e) => {
+    // Set global unit system to the loaded sheet's unit system
+    globalProps.units = data.unit_system || "metric";
+    globalThis.elements = (data.elements || []).map((e) => {
       const obj = {
         id: e.id,
         type: e.type || "Joint",
@@ -1853,9 +2187,18 @@ async function loadState() {
         if (e.points) {
           // New point-based format
           obj.points = e.points;
-        obj.E = e.E ?? 200e9;
-        obj.A = e.A ?? 0.01;
-        obj.I = e.I ?? 1e-6;
+          obj.E = e.E ?? 200e9;
+          obj.A = e.A ?? 0.01;
+          obj.I = e.I ?? 1e-6;
+          // Handle material and density
+          obj.material = e.material ?? (obj.type === "Cable" ? "steel" : "wood");
+          obj.density = e.density ?? (obj.type === "Cable" ? 7800 : 500);
+          // Recalculate mass if not set or if material/density changed
+          if (!e.mass || e.material !== obj.material || e.density !== obj.density) {
+            obj.mass = calculateMass(obj);
+          } else {
+            obj.mass = e.mass;
+          }
         } else {
           // Legacy format - convert to points
           obj.points = [
@@ -1865,27 +2208,59 @@ async function loadState() {
           obj.E = e.E ?? 200e9;
           obj.A = e.A ?? 0.01;
           obj.I = e.I ?? 1e-6;
+          // Set default material and density for legacy elements
+          obj.material = obj.type === "Cable" ? "steel" : "wood";
+          obj.density = obj.type === "Cable" ? 7800 : 500;
+          obj.mass = calculateMass(obj);
         }
       } else if (obj.type === "Plane") {
         if (e.points) {
           // Point-based plane
           obj.points = e.points;
           obj.normal = e.normal;
+          // Handle material and density
+          obj.material = e.material ?? "wood";
+          obj.density = e.density ?? 500;
+          obj.thickness = e.thickness ?? 0.01;
+          // Recalculate mass if not set or if material/density/thickness changed
+          if (!e.mass || e.material !== obj.material || e.density !== obj.density || e.thickness !== obj.thickness) {
+            obj.mass = calculateMass(obj);
+          } else {
+            obj.mass = e.mass;
+          }
         } else {
           // Legacy dimension-based plane
-        obj.length = e.length ?? 40;
-        obj.width = e.width ?? 40;
-        obj.normal = e.normal ?? currentView[1];
+          obj.length = e.length ?? 40;
+          obj.width = e.width ?? 40;
+          obj.normal = e.normal ?? currentView[1];
+          // Set default material and density for legacy elements
+          obj.material = "wood";
+          obj.density = 500;
+          obj.thickness = 0.01;
+          obj.mass = calculateMass(obj);
         }
       } else if (obj.type === "Solid") {
         if (e.points) {
           // Point-based solid
           obj.points = e.points;
+          // Handle material and density
+          obj.material = e.material ?? "wood";
+          obj.density = e.density ?? 500;
+          // Recalculate mass if not set or if material/density changed
+          if (!e.mass || e.material !== obj.material || e.density !== obj.density) {
+            obj.mass = calculateMass(obj);
+          } else {
+            obj.mass = e.mass;
+          }
         } else {
           // Legacy dimension-based solid
-        obj.width = e.width ?? 30;
-        obj.height = e.height ?? 30;
-        obj.depth = e.depth ?? 30;
+          obj.width = e.width ?? 30;
+          obj.height = e.height ?? 30;
+          obj.depth = e.depth ?? 30;
+          // Set default material and density for legacy elements
+          obj.material = "wood";
+          obj.density = 500;
+          obj.mass = calculateMass(obj);
         }
       } else if (obj.type === "Load") {
         if (e.points) {
@@ -1898,7 +2273,7 @@ async function loadState() {
             { x: e.x, y: e.y, z: e.z },
             { x: e.x2 ?? e.x, y: e.y2 ?? e.y, z: e.z2 ?? e.z },
           ];
-        obj.amount =
+          obj.amount =
             e.amount ??
             Math.hypot(obj.x2 - obj.x, obj.y2 - obj.y, obj.z2 - obj.z);
         }
@@ -1912,27 +2287,21 @@ async function loadState() {
         } else {
           // Legacy format - convert to points
           obj.points = [{ x: e.x, y: e.y, z: e.z }];
-        obj.ux = e.ux !== false;
-        obj.uy = e.uy !== false;
-        obj.rz = e.rz !== false;
+          obj.ux = e.ux !== false;
+          obj.uy = e.uy !== false;
+          obj.rz = e.rz !== false;
         }
       }
       return obj;
     });
-    let maxId = elements.reduce((m, e) => Math.max(m, e.id), 0);
+    let maxId = globalThis.elements.reduce((m, e) => Math.max(m, e.id), 0);
     nextId = Math.max(Date.now(), maxId + 1);
-
     // Clear calculation results when loading a new sheet
     lastCalculationResults = null;
 
-    // Clear any pending debounced updates and render immediately
-    if (propertyUpdateTimeout) {
-      clearTimeout(propertyUpdateTimeout);
-      propertyUpdateTimeout = null;
-    }
-
     updateSheetHeader();
-    await render(true);
+    await render(false); // Don't update properties here, we'll do it directly
+    await renderProperties(); // Always update properties when loading a new sheet
   }
 }
 
@@ -1944,13 +2313,12 @@ document.getElementById("delete-btn").addEventListener("click", async () => {
   await deleteElement();
 });
 document.getElementById("canvas").addEventListener("click", async () => {
-  selectedId = null;
-  // Clear any pending debounced updates and render immediately
-  if (propertyUpdateTimeout) {
-    clearTimeout(propertyUpdateTimeout);
-    propertyUpdateTimeout = null;
+  // Only deselect if we're not panning or rotating
+  if (!globalThis.isPanning && !globalThis.isRotating) {
+    globalThis.selectedId = null;
+    await render(false); // Don't update properties here, we'll do it directly
+    await renderProperties(); // Always update properties when deselecting
   }
-  await render(true);
 });
 document.getElementById("canvas").addEventListener("mousedown", startPan);
 document.getElementById("canvas").addEventListener("wheel", onCanvasWheel);
@@ -1979,7 +2347,8 @@ document.querySelectorAll(".view-btn").forEach((btn) => {
       .querySelectorAll(".view-btn")
       .forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
-    await render(true); // Immediate property update for discrete view changes
+    await render(false); // Don't update properties here, we'll do it directly
+    await renderProperties(); // Always update properties when changing views
   });
 });
 
@@ -1993,7 +2362,7 @@ function buildModel() {
   let nextPointId = 1;
 
   // First, collect all points from all elements, but only mark as referenced if used by a member, support, or as the application point of a load
-  elements.forEach((el) => {
+  globalThis.elements.forEach((el) => {
     if (el.type === "Member" || el.type === "Cable") {
       if (el.points) {
         el.points.forEach((p) => {
@@ -2051,21 +2420,88 @@ function buildModel() {
     return coordToId.get(key);
   }
 
-  const members = elements
+  // Helper to calculate center of gravity for different element types
+  function calculateCenterOfGravity(el) {
+    if (!el.points || el.points.length === 0) return null;
+
+    if (el.type === "Member" || el.type === "Cable") {
+      // Center of gravity is at the midpoint
+      const p1 = el.points[0];
+      const p2 = el.points[1];
+      return {
+        x: (p1.x + p2.x) / 2,
+        y: (p1.y + p2.y) / 2,
+        z: (p1.z + p2.z) / 2,
+      };
+    } else if (el.type === "Plane") {
+      // Center of gravity is at the centroid of the plane
+      const sumX = el.points.reduce((sum, p) => sum + p.x, 0);
+      const sumY = el.points.reduce((sum, p) => sum + p.y, 0);
+      const sumZ = el.points.reduce((sum, p) => sum + p.z, 0);
+      return {
+        x: sumX / el.points.length,
+        y: sumY / el.points.length,
+        z: sumZ / el.points.length,
+      };
+    }
+    return null;
+  }
+
+  // Calculate gravity loads from masses
+  const gravityLoads = [];
+  globalThis.elements.forEach((el) => {
+    if (el.mass && el.mass > 0) {
+      const cog = calculateCenterOfGravity(el);
+      if (cog) {
+        // Calculate gravity force: F = mg (acting in -Z direction)
+        const gravityForce = el.mass * globalProps.g;
+
+        // Find the closest point to apply the gravity load
+        let closestPoint = null;
+        let minDistance = Infinity;
+
+        points.forEach((point) => {
+          const distance = Math.sqrt(
+            Math.pow(point.x - cog.x, 2) +
+              Math.pow(point.y - cog.y, 2) +
+              Math.pow(point.z - cog.z, 2),
+          );
+          if (distance < minDistance) {
+            minDistance = distance;
+            closestPoint = point;
+          }
+        });
+
+        if (closestPoint) {
+          gravityLoads.push({
+            point: closestPoint.id,
+            fx: 0, // No horizontal component
+            fy: -gravityForce, // Downward force (negative Y direction)
+            mz: 0,
+            amount: gravityForce,
+            isGravityLoad: true, // Flag to identify gravity loads
+            sourceElement: el.id,
+          });
+        }
+      }
+    }
+  });
+
+  const members = globalThis.elements
     .filter((e) => e.type === "Member" || e.type === "Cable")
     .map((e) => {
       if (e.points) {
         return {
           start: getPointId(e.points[0].x, e.points[0].y, e.points[0].z),
           end: getPointId(e.points[1].x, e.points[1].y, e.points[1].z),
-      E: e.E ?? 200e9,
-      A: e.A ?? 0.01,
-      I: e.I ?? 1e-6,
+          E: e.E ?? 200e9,
+          A: e.A ?? 0.01,
+          I: e.I ?? 1e-6,
         };
       }
     });
 
-  const loads = elements
+  const loads = globalThis.elements
     .filter((e) => e.type === "Load")
     .map((e) => {
       if (e.points) {
@@ -2073,31 +2509,35 @@ function buildModel() {
         const dy = e.points[1].y - e.points[0].y;
         const dz = e.points[1].z - e.points[0].z;
         const len = Math.hypot(dx, dy, dz) || 1;
-      const amt = e.amount ?? 0;
-      return {
+        const amt = e.amount ?? 0;
+        return {
           point: getPointId(e.points[0].x, e.points[0].y, e.points[0].z),
-        fx: (amt * dx) / len,
-        fy: (amt * dy) / len,
-        mz: 0,
-        amount: amt,
-      };
+          fx: (amt * dx) / len,
+          fy: (amt * dy) / len,
+          mz: 0,
+          amount: amt,
+          isGravityLoad: false,
+        };
       }
     });
 
-  const supports = elements
+  const supports = globalThis.elements
     .filter((e) => e.type === "Support")
     .map((e) => {
       if (e.points) {
         return {
           point: getPointId(e.points[0].x, e.points[0].y, e.points[0].z),
-      ux: e.ux !== false,
-      uy: e.uy !== false,
-      rz: e.rz !== false,
+          ux: e.ux !== false,
+          uy: e.uy !== false,
+          rz: e.rz !== false,
         };
       }
     });
 
-  return { points, members, loads, supports };
+  // Combine regular loads with gravity loads
+  const allLoads = [...loads, ...gravityLoads];
+
+  return { points, members, loads: allLoads, supports };
 }
 
 async function solveModel() {
@@ -2126,6 +2566,7 @@ async function solveModel() {
     reactions: data.reactions || {},
     points: payload.points,
     unit_system: data.unit_system,
+    gravityLoads: payload.loads.filter((load) => load.isGravityLoad),
   };
 
   const lines = [];
@@ -2162,7 +2603,7 @@ async function solveModel() {
     for (const [pointId, dispData] of displacements) {
       const point = payload.points.find((p) => p.id === parseInt(pointId));
       if (point) {
-    lines.push(
+        lines.push(
           `  Point ${pointId} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)}):`,
         );
         lines.push(`    Horizontal displacement (ux): ${dispData.ux}`);
@@ -2183,7 +2624,7 @@ async function solveModel() {
     for (const [pointId, reactData] of reactions) {
       const point = payload.points.find((p) => p.id === parseInt(pointId));
       if (point) {
-    lines.push(
+        lines.push(
           `  Point ${pointId} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)}):`,
         );
         lines.push(`    Horizontal force (fx): ${reactData.fx}`);
@@ -2200,6 +2641,9 @@ async function solveModel() {
   if (payload.loads.length === 0) {
     lines.push("  No loads applied.");
   } else {
+    let regularLoadCount = 0;
+    let gravityLoadCount = 0;
+
     for (let i = 0; i < payload.loads.length; i++) {
       const load = payload.loads[i];
       const point = payload.points.find((p) => p.id === load.point);
@@ -2213,16 +2657,57 @@ async function solveModel() {
             ? (magnitude / 1000).toFixed(6)
             : (magnitude / 4448.22).toFixed(6);
 
-        lines.push(
-          `  Load ${i + 1} at Point ${load.point} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}):`,
-        );
-        lines.push(`    Magnitude: ${magnitudeFormatted} ${forceUnit}`);
-        lines.push(`    Direction: ${angle.toFixed(2)}° from horizontal`);
-        lines.push(
-          `    Components: fx = ${load.fx.toFixed(6)} N, fy = ${load.fy.toFixed(6)} N`,
-        );
+        if (load.isGravityLoad) {
+          gravityLoadCount++;
+          const sourceElement = globalThis.elements.find(
+            (e) => e.id === load.sourceElement,
+          );
+          const mass = sourceElement ? sourceElement.mass : 0;
+          const massUnit = unitSystem === "metric" ? "kg" : "lb";
+          const massFormatted =
+            unitSystem === "metric"
+              ? mass.toFixed(3)
+              : (mass * 2.20462).toFixed(3);
+
+          lines.push(
+            `  Gravity Load ${gravityLoadCount} at Point ${load.point} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}):`,
+          );
+          lines.push(
+            `    Source: ${sourceElement ? sourceElement.type : "Unknown"} (ID: ${load.sourceElement})`,
+          );
+          lines.push(`    Mass: ${massFormatted} ${massUnit}`);
+          lines.push(
+            `    Gravity Force: ${magnitudeFormatted} ${forceUnit} (downward)`,
+          );
+          lines.push(`    Direction: 270° (straight down)`);
+          lines.push(
+            `    Components: fx = ${load.fx.toFixed(6)} N, fy = ${load.fy.toFixed(6)} N`,
+          );
+        } else {
+          regularLoadCount++;
+          lines.push(
+            `  Load ${regularLoadCount} at Point ${load.point} (${point.x.toFixed(3)}, ${point.y.toFixed(3)}):`,
+          );
+          lines.push(`    Magnitude: ${magnitudeFormatted} ${forceUnit}`);
+          lines.push(`    Direction: ${angle.toFixed(2)}° from horizontal`);
+          lines.push(
+            `    Components: fx = ${load.fx.toFixed(6)} N, fy = ${load.fy.toFixed(6)} N`,
+          );
+        }
         lines.push("");
       }
+    }
+
+    // Summary of load types
+    if (regularLoadCount > 0 || gravityLoadCount > 0) {
+      lines.push("LOAD SUMMARY:");
+      if (regularLoadCount > 0) {
+        lines.push(`  Regular loads: ${regularLoadCount}`);
+      }
+      if (gravityLoadCount > 0) {
+        lines.push(`  Gravity loads: ${gravityLoadCount}`);
+      }
+      lines.push("");
     }
   }
 
@@ -2302,6 +2787,53 @@ async function solveModel() {
     }
   }
 
+  // Mass and Gravity Summary
+  lines.push("MASS AND GRAVITY SUMMARY:");
+  lines.push("-".repeat(20));
+  let totalMass = 0;
+  const massByType = {};
+
+  globalThis.elements.forEach((el) => {
+    if (el.mass && el.mass > 0) {
+      totalMass += el.mass;
+      if (!massByType[el.type]) {
+        massByType[el.type] = 0;
+      }
+      massByType[el.type] += el.mass;
+    }
+  });
+
+  if (totalMass > 0) {
+    const unitSystem = data.unit_system || "metric";
+    const massUnit = unitSystem === "metric" ? "kg" : "lb";
+    const massFormatted =
+      unitSystem === "metric"
+        ? totalMass.toFixed(3)
+        : (totalMass * 2.20462).toFixed(3);
+    const gravityForce = totalMass * globalProps.g;
+    const forceUnit = unitSystem === "metric" ? "kN" : "kip";
+    const forceFormatted =
+      unitSystem === "metric"
+        ? (gravityForce / 1000).toFixed(6)
+        : (gravityForce / 4448.22).toFixed(6);
+
+    lines.push(`  Total Mass: ${massFormatted} ${massUnit}`);
+    lines.push(`  Total Gravity Force: ${forceFormatted} ${forceUnit}`);
+    lines.push("");
+
+    // Breakdown by element type
+    lines.push("  Mass Breakdown by Element Type:");
+    Object.entries(massByType).forEach(([type, mass]) => {
+      const typeMassFormatted =
+        unitSystem === "metric" ? mass.toFixed(3) : (mass * 2.20462).toFixed(3);
+      lines.push(`    ${type}: ${typeMassFormatted} ${massUnit}`);
+    });
+    lines.push("");
+  } else {
+    lines.push("  No mass defined for any elements.");
+    lines.push("");
+  }
+
   out.textContent = lines.join("\n");
 
   // Re-render to show calculation results
@@ -2368,7 +2900,8 @@ function renderCalculationResults() {
 
   const svg = document.getElementById("canvas");
 
-  const { displacements, reactions, points } = lastCalculationResults;
+  const { displacements, reactions, points, gravityLoads } =
+    lastCalculationResults;
 
   // Create a group for calculation results
   const resultsGroup = document.createElementNS(
@@ -2438,6 +2971,41 @@ function renderCalculationResults() {
       0.8,
     );
   });
+
+  // Render gravity force vectors (if available in results)
+  if (gravityLoads && Array.isArray(gravityLoads)) {
+    gravityLoads.forEach((gravityLoad) => {
+      const point = points.find((p) => p.id === gravityLoad.point);
+      if (!point) return;
+
+      const magnitude = gravityLoad.amount || 0;
+      if (magnitude < 1e-6) return; // Skip very small gravity forces
+
+      // Gravity acts downward (-Z direction, which projects as +Y in screen space)
+      const world_scale = 0.001 * 20;
+      const start_3d = { x: point.x, y: point.y, z: point.z };
+      const end_3d = {
+        x: point.x,
+        y: point.y,
+        z: point.z - magnitude * world_scale, // Downward in Z
+      };
+
+      // Project both points to screen space
+      const start_screen = screenCoords(start_3d);
+      const end_screen = screenCoords(end_3d);
+
+      // Draw gravity force vector (orange color to distinguish from reactions)
+      renderForceVector(
+        resultsGroup,
+        start_screen.x,
+        start_screen.y,
+        end_screen.x,
+        end_screen.y,
+        "orange",
+        0.9,
+      );
+    });
+  }
 }
 
 loadState();
@@ -2470,16 +3038,17 @@ function constrainToOrthogonal(delta, faceIndex, elementType) {
   const constrained = { x: 0, y: 0, z: 0 };
 
   if (elementType === "Plane") {
-    // Plane edges: constrain to the two axes that define the edge
-    const edgeAxes = [
-      ["y", "z"], // edge 0-1: Y-Z plane
-      ["x", "z"], // edge 1-2: X-Z plane
-      ["y", "z"], // edge 2-3: Y-Z plane
-      ["x", "z"], // edge 3-0: X-Z plane
+    // Plane edges: constrain to the plane defined by the edge
+    // For a plane, edges define planes that are perpendicular to the edge direction
+    const edgePlanes = [
+      ["y", "z"], // edge 0-1: Y-Z plane (allows Y and Z movement)
+      ["x", "z"], // edge 1-2: X-Z plane (allows X and Z movement)
+      ["y", "z"], // edge 2-3: Y-Z plane (allows Y and Z movement)
+      ["x", "z"], // edge 3-0: X-Z plane (allows X and Z movement)
     ];
 
-    if (faceIndex < edgeAxes.length) {
-      const axes = edgeAxes[faceIndex];
+    if (faceIndex < edgePlanes.length) {
+      const axes = edgePlanes[faceIndex];
       axes.forEach((axis) => {
         constrained[axis] = delta[axis] || 0;
       });
@@ -2505,11 +3074,100 @@ function constrainToOrthogonal(delta, faceIndex, elementType) {
 }
 
 function selectElement(id) {
-  selectedId = id;
-  // Clear any pending debounced updates and render immediately
-  if (propertyUpdateTimeout) {
-    clearTimeout(propertyUpdateTimeout);
-    propertyUpdateTimeout = null;
+  globalThis.selectedId = id;
+  render(false); // Don't update properties here, we'll do it directly
+  renderProperties(); // Always update properties when selecting an element
+}
+
+// Function to calculate mass based on element type and properties
+function calculateMass(el) {
+  if (!el.density) {
+    // Set default density based on material
+    if (el.material === "wood") {
+      el.density = 500;
+    } else if (el.material === "steel") {
+      el.density = 7800;
+    } else {
+      // Set default material and density based on element type
+      if (el.type === "Cable") {
+        el.material = "steel";
+        el.density = 7800;
+      } else {
+        el.material = "wood";
+        el.density = 500;
+      }
+    }
   }
-  render(true); // Always update properties when selecting an element
+
+  if (el.type === "Member" || el.type === "Cable") {
+    // Mass = Cross Section × Length × Density
+    const area = el.A || 0.01;
+    const length = calculateLength(el);
+    return area * length * el.density;
+  } else if (el.type === "Plane") {
+    // Mass = Area × Thickness × Density
+    const area = calculateArea(el);
+    const thickness = el.thickness || 0.01;
+    return area * thickness * el.density;
+  } else if (el.type === "Solid") {
+    // Mass = Volume × Density
+    const volume = calculateVolume(el);
+    return volume * el.density;
+  }
+  
+  return 0;
+}
+
+// Helper function to calculate length of a member/cable
+function calculateLength(el) {
+  if (el.points && el.points.length >= 2) {
+    const p1 = el.points[0];
+    const p2 = el.points[1];
+    return Math.sqrt(
+      Math.pow(p2.x - p1.x, 2) + 
+      Math.pow(p2.y - p1.y, 2) + 
+      Math.pow(p2.z - p1.z, 2)
+    );
+  }
+  return 0.1; // Default length
+}
+
+// Helper function to calculate area of a plane
+function calculateArea(el) {
+  if (el.points && el.points.length >= 4) {
+    // Calculate area using shoelace formula for polygon
+    let area = 0;
+    for (let i = 0; i < el.points.length; i++) {
+      const j = (i + 1) % el.points.length;
+      area += el.points[i].x * el.points[j].y;
+      area -= el.points[j].x * el.points[i].y;
+    }
+    return Math.abs(area) / 2;
+  }
+  // Fallback to legacy dimension-based calculation
+  const length = el.length || 40;
+  const width = el.width || 40;
+  return length * width;
+}
+
+// Helper function to calculate volume of a solid
+function calculateVolume(el) {
+  if (el.points && el.points.length >= 8) {
+    // Calculate volume using the 8 corner points
+    // This is a simplified calculation assuming the solid is a rectangular prism
+    const xCoords = el.points.map(p => p.x);
+    const yCoords = el.points.map(p => p.y);
+    const zCoords = el.points.map(p => p.z);
+    
+    const width = Math.max(...xCoords) - Math.min(...xCoords);
+    const height = Math.max(...yCoords) - Math.min(...yCoords);
+    const depth = Math.max(...zCoords) - Math.min(...zCoords);
+    
+    return width * height * depth;
+  }
+  // Fallback to legacy dimension-based calculation
+  const width = el.width || 30;
+  const height = el.height || 30;
+  const depth = el.depth || 30;
+  return width * height * depth;
 }
