@@ -9,6 +9,7 @@ from config import DevelopmentConfig
 from timber import Load, Member, Model, Point, Support, solve
 from timber.extensions import db
 from timber.models import Sheet, User
+from timber.units import area, force, length, moment_of_inertia, stress
 
 
 class TestConfig(DevelopmentConfig):
@@ -26,9 +27,16 @@ def create_test_app(config_obj=TestConfig):
 
 def test_solve_endpoint_returns_results():
     model = Model(
-        points=[Point(id=1, x=0.0, y=0.0), Point(id=2, x=1.0, y=0.0)],
-        members=[Member(start=1, end=2, E=200e9, A=0.01, I=1e-6)],
-        loads=[Load(point=2, fy=-100.0)],
+        points=[
+            Point(id=1, x=length(0.0), y=length(0.0)),
+            Point(id=2, x=length(1.0), y=length(0.0)),
+        ],
+        members=[
+            Member(
+                start=1, end=2, E=stress(200e9), A=area(0.01), I=moment_of_inertia(1e-6)
+            )
+        ],
+        loads=[Load(point=2, fy=force(-100.0))],
         supports=[Support(point=1, ux=True, uy=True, rz=True)],
     )
     expected = solve(model)

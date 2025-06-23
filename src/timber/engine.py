@@ -1,11 +1,60 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
-from .units import format_force, format_length, format_moment, get_unit_manager
+from .units import (
+    UnitQuantity,
+    acceleration,
+    area,
+    force,
+    format_force,
+    format_length,
+    format_moment,
+    get_unit_manager,
+    length,
+    moment,
+    moment_of_inertia,
+    stress,
+)
+
+
+def _to_unit_quantity(val: Any, kind: str) -> UnitQuantity:
+    """Convert val to a UnitQuantity of the given kind (length, force, etc)."""
+    if isinstance(val, UnitQuantity):
+        # Defensive: ensure .value is a float, not a dict
+        if isinstance(val.value, dict):
+            return UnitQuantity(
+                _to_unit_quantity(val.value, kind).value, val.unit_vector
+            )
+        return val
+    if isinstance(val, dict):
+        # Try to reconstruct from dict
+        if "value" in val and "unit_vector" in val:
+            # Recursively extract value if needed
+            v = val["value"]
+            if isinstance(v, dict):
+                v = _to_unit_quantity(v, kind).value
+            return UnitQuantity(v, val["unit_vector"])
+        # fallback: treat as float
+        return _to_unit_quantity(val.get("value", 0.0), kind)
+    if kind == "length":
+        return length(val)
+    if kind == "force":
+        return force(val)
+    if kind == "moment":
+        return moment(val)
+    if kind == "stress":
+        return stress(val)
+    if kind == "area":
+        return area(val)
+    if kind == "moment_of_inertia":
+        return moment_of_inertia(val)
+    if kind == "acceleration":
+        return acceleration(val)
+    return val
 
 
 @dataclass
@@ -13,9 +62,14 @@ class Point:
     """A 3D point with unique ID."""
 
     id: int
-    x: float
-    y: float
-    z: float = 0.0
+    x: UnitQuantity
+    y: UnitQuantity
+    z: UnitQuantity = field(default_factory=lambda: length(0.0))
+
+    def __post_init__(self):
+        self.x = _to_unit_quantity(self.x, "length")
+        self.y = _to_unit_quantity(self.y, "length")
+        self.z = _to_unit_quantity(self.z, "length")
 
 
 @dataclass
@@ -24,9 +78,14 @@ class Member:
 
     start: int  # Point ID
     end: int  # Point ID
-    E: float = 200e9
-    A: float = 0.01
-    I: float = 1e-6
+    E: UnitQuantity = field(default_factory=lambda: stress(200e9))
+    A: UnitQuantity = field(default_factory=lambda: area(0.01))
+    I: UnitQuantity = field(default_factory=lambda: moment_of_inertia(1e-6))
+
+    def __post_init__(self):
+        self.E = _to_unit_quantity(self.E, "stress")
+        self.A = _to_unit_quantity(self.A, "area")
+        self.I = _to_unit_quantity(self.I, "moment_of_inertia")
 
 
 @dataclass
@@ -34,10 +93,16 @@ class Load:
     """Nodal load at a specific point."""
 
     point: int  # Point ID
-    fx: float = 0.0
-    fy: float = 0.0
-    mz: float = 0.0
-    amount: float = 0.0
+    fx: UnitQuantity = field(default_factory=lambda: force(0.0))
+    fy: UnitQuantity = field(default_factory=lambda: force(0.0))
+    mz: UnitQuantity = field(default_factory=lambda: moment(0.0))
+    amount: UnitQuantity = field(default_factory=lambda: force(0.0))
+
+    def __post_init__(self):
+        self.fx = _to_unit_quantity(self.fx, "force")
+        self.fy = _to_unit_quantity(self.fy, "force")
+        self.mz = _to_unit_quantity(self.mz, "moment")
+        self.amount = _to_unit_quantity(self.amount, "force")
 
 
 @dataclass
@@ -168,9 +233,9 @@ def _assemble_matrices(
     for load in model.loads:
         if load.point in point_id_to_idx:
             idx = point_id_to_idx[load.point] * 3
-            fx = 0.0 if load.fx is None else float(load.fx)
-            fy = 0.0 if load.fy is None else float(load.fy)
-            mz = 0.0 if load.mz is None else float(load.mz)
+            fx = 0.0 if load.fx is None else float(load.fx.value)
+            fy = 0.0 if load.fy is None else float(load.fy.value)
+            mz = 0.0 if load.mz is None else float(load.mz.value)
             F_ext[idx] += fx
             F_ext[idx + 1] += fy
             F_ext[idx + 2] += mz
@@ -187,14 +252,14 @@ def _assemble_matrices(
         start_point = model.points[start_idx]
         end_point = model.points[end_idx]
 
-        dx = end_point.x - start_point.x
-        dy = end_point.y - start_point.y
+        dx = end_point.x.value - start_point.x.value
+        dy = end_point.y.value - start_point.y.value
         L = (dx**2 + dy**2) ** 0.5
         if L == 0:
             continue
         c = dx / L
         s = dy / L
-        k_local = _local_stiffness(m.E, m.A, m.I, L)
+        k_local = _local_stiffness(m.E.value, m.A.value, m.I.value, L)
         T = _transformation(c, s)
         k_global = T.T @ k_local @ T
         dof_map = [
@@ -325,8 +390,8 @@ def solve_with_diagnostics(model: Model) -> tuple[Results, List[str]]:
         start_point = next(p for p in model.points if p.id == m.start)
         end_point = next(p for p in model.points if p.id == m.end)
 
-        dx = end_point.x - start_point.x
-        dy = end_point.y - start_point.y
+        dx = end_point.x.value - start_point.x.value
+        dy = end_point.y.value - start_point.y.value
         if np.isclose(dx, 0) and np.isclose(dy, 0):
             issues.append(f"Member at point {m.start} has zero length.")
             break

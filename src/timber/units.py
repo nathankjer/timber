@@ -1,55 +1,293 @@
 """
-Unit system for timber structural analysis.
+Unit-aware system for timber structural analysis.
 
-This module provides unit conversion utilities and unit-aware data structures
-for handling metric and imperial units throughout the application.
+This module provides unit-aware quantities with SI base unit vectors that can
+handle multiplication, division, addition, and subtraction with proper unit arithmetic.
 All internal calculations are performed in SI units, with conversion only for display.
 """
 
 from dataclasses import dataclass
-from typing import Dict, Literal
+from typing import Dict, Literal, Union
 
 # Unit system types
 UnitSystem = Literal["metric", "imperial"]
 
+# SI Base units: [length, mass, time, current, temperature, amount, luminous_intensity]
+SI_BASE_UNITS = ["m", "kg", "s", "A", "K", "mol", "cd"]
 
-# Unit types
-class Units:
-    """Unit constants for different physical quantities."""
 
-    # SI Units (base units for all calculations)
-    METER = "m"
-    NEWTON = "N"
-    NEWTON_METER = "N·m"
-    PASCAL = "Pa"
-    SQUARE_METER = "m²"
-    METER_TO_FOURTH = "m⁴"
-    METER_PER_SECOND_SQUARED = "m/s²"
+@dataclass
+class UnitVector:
+    """Represents a unit as a vector of SI base unit exponents."""
 
-    # Metric display units
-    MILLIMETER = "mm"
-    CENTIMETER = "cm"
-    KILONEWTON = "kN"
-    KILONEWTON_METER = "kN·m"
-    MEGAPASCAL = "MPa"
-    GIGAPASCAL = "GPa"
-    SQUARE_MILLIMETER = "mm²"
-    MILLIMETER_TO_FOURTH = "mm⁴"
+    # Exponents for [length, mass, time, current, temperature, amount, luminous_intensity]
+    length: int = 0
+    mass: int = 0
+    time: int = 0
+    current: int = 0
+    temperature: int = 0
+    amount: int = 0
+    luminous_intensity: int = 0
 
-    # Imperial display units
-    FOOT = "ft"
-    INCH = "in"
-    POUND = "lb"
-    KIP = "kip"
-    POUND_FOOT = "lb·ft"
-    KIP_FOOT = "kip·ft"
-    PSI = "psi"
-    KSI = "ksi"
-    SQUARE_FOOT = "ft²"
-    SQUARE_INCH = "in²"
-    INCH_TO_FOURTH = "in⁴"
-    POUND_FOOT_SECOND_SQUARED = "lb·ft²"
-    FOOT_PER_SECOND_SQUARED = "ft/s²"
+    def __post_init__(self):
+        """Convert to tuple for immutability and easier comparison."""
+        self._vector = (
+            self.length,
+            self.mass,
+            self.time,
+            self.current,
+            self.temperature,
+            self.amount,
+            self.luminous_intensity,
+        )
+
+    def __add__(self, other: "UnitVector") -> "UnitVector":
+        """Add unit vectors (for multiplication of quantities)."""
+        return UnitVector(
+            length=self.length + other.length,
+            mass=self.mass + other.mass,
+            time=self.time + other.time,
+            current=self.current + other.current,
+            temperature=self.temperature + other.temperature,
+            amount=self.amount + other.amount,
+            luminous_intensity=self.luminous_intensity + other.luminous_intensity,
+        )
+
+    def __sub__(self, other: "UnitVector") -> "UnitVector":
+        """Subtract unit vectors (for division of quantities)."""
+        return UnitVector(
+            length=self.length - other.length,
+            mass=self.mass - other.mass,
+            time=self.time - other.time,
+            current=self.current - other.current,
+            temperature=self.temperature - other.temperature,
+            amount=self.amount - other.amount,
+            luminous_intensity=self.luminous_intensity - other.luminous_intensity,
+        )
+
+    def __eq__(self, other: "UnitVector") -> bool:
+        """Check if unit vectors are equal."""
+        return self._vector == other._vector
+
+    def __hash__(self):
+        """Make unit vectors hashable."""
+        return hash(self._vector)
+
+    def __str__(self) -> str:
+        """String representation of the unit vector."""
+        return f"UnitVector({self._vector})"
+
+    def __repr__(self) -> str:
+        """Detailed string representation."""
+        return f"UnitVector(length={self.length}, mass={self.mass}, time={self.time}, current={self.current}, temperature={self.temperature}, amount={self.amount}, luminous_intensity={self.luminous_intensity})"
+
+
+# Predefined unit vectors for common quantities
+UNIT_VECTORS = {
+    # Dimensionless
+    "dimensionless": UnitVector(),
+    # Length units
+    "m": UnitVector(length=1),
+    "mm": UnitVector(length=1),
+    "cm": UnitVector(length=1),
+    "ft": UnitVector(length=1),
+    "in": UnitVector(length=1),
+    # Mass units
+    "kg": UnitVector(mass=1),
+    "g": UnitVector(mass=1),
+    # Time units
+    "s": UnitVector(time=1),
+    "min": UnitVector(time=1),
+    "hr": UnitVector(time=1),
+    # Force units (mass * length / time^2)
+    "N": UnitVector(length=1, mass=1, time=-2),
+    "kN": UnitVector(length=1, mass=1, time=-2),
+    "lb": UnitVector(length=1, mass=1, time=-2),  # pound-force
+    "kip": UnitVector(length=1, mass=1, time=-2),
+    # Moment units (force * length = mass * length^2 / time^2)
+    "N·m": UnitVector(length=2, mass=1, time=-2),
+    "kN·m": UnitVector(length=2, mass=1, time=-2),
+    "lb·ft": UnitVector(length=2, mass=1, time=-2),
+    "kip·ft": UnitVector(length=2, mass=1, time=-2),
+    # Stress units (force / area = mass / (length * time^2))
+    "Pa": UnitVector(length=-1, mass=1, time=-2),
+    "MPa": UnitVector(length=-1, mass=1, time=-2),
+    "GPa": UnitVector(length=-1, mass=1, time=-2),
+    "psi": UnitVector(length=-1, mass=1, time=-2),
+    "ksi": UnitVector(length=-1, mass=1, time=-2),
+    # Area units (length^2)
+    "m²": UnitVector(length=2),
+    "mm²": UnitVector(length=2),
+    "ft²": UnitVector(length=2),
+    "in²": UnitVector(length=2),
+    # Moment of inertia units (length^4)
+    "m⁴": UnitVector(length=4),
+    "mm⁴": UnitVector(length=4),
+    "in⁴": UnitVector(length=4),
+    # Acceleration units (length / time^2)
+    "m/s²": UnitVector(length=1, time=-2),
+    "ft/s²": UnitVector(length=1, time=-2),
+    # Velocity units (length / time)
+    "m/s": UnitVector(length=1, time=-1),
+    "ft/s": UnitVector(length=1, time=-1),
+}
+
+
+@dataclass
+class UnitQuantity:
+    """A quantity with a value and unit vector."""
+
+    value: float  # Value in SI base units
+    unit_vector: UnitVector  # Unit vector representing the quantity's units
+
+    def __post_init__(self):
+        """Ensure unit_vector is a UnitVector instance."""
+        if isinstance(self.unit_vector, str):
+            self.unit_vector = UNIT_VECTORS.get(self.unit_vector, UnitVector())
+        elif isinstance(self.unit_vector, (list, tuple)):
+            # Convert list/tuple to UnitVector
+            if len(self.unit_vector) >= 7:
+                self.unit_vector = UnitVector(*self.unit_vector[:7])
+            else:
+                # Pad with zeros if shorter than 7
+                padded = list(self.unit_vector) + [0] * (7 - len(self.unit_vector))
+                self.unit_vector = UnitVector(*padded)
+
+    def __mul__(self, other: Union["UnitQuantity", float, int]) -> "UnitQuantity":
+        """Multiply two quantities or multiply by a scalar."""
+        if isinstance(other, (int, float)):
+            return UnitQuantity(self.value * other, self.unit_vector)
+        elif isinstance(other, UnitQuantity):
+            return UnitQuantity(
+                self.value * other.value, self.unit_vector + other.unit_vector
+            )
+        else:
+            return NotImplemented
+
+    def __rmul__(self, other: Union[float, int]) -> "UnitQuantity":
+        """Right multiplication by scalar."""
+        return self * other
+
+    def __truediv__(self, other: Union["UnitQuantity", float, int]) -> "UnitQuantity":
+        """Divide two quantities or divide by a scalar."""
+        if isinstance(other, (int, float)):
+            return UnitQuantity(self.value / other, self.unit_vector)
+        elif isinstance(other, UnitQuantity):
+            return UnitQuantity(
+                self.value / other.value, self.unit_vector - other.unit_vector
+            )
+        else:
+            return NotImplemented
+
+    def __rtruediv__(self, other: Union[float, int]) -> "UnitQuantity":
+        """Right division by scalar."""
+        return UnitQuantity(other / self.value, -self.unit_vector)
+
+    def __add__(self, other: "UnitQuantity") -> "UnitQuantity":
+        """Add two quantities (must have same unit vector)."""
+        if isinstance(other, UnitQuantity):
+            if self.unit_vector == other.unit_vector:
+                return UnitQuantity(self.value + other.value, self.unit_vector)
+            else:
+                raise ValueError(
+                    f"Cannot add quantities with different units: {self.unit_vector} and {other.unit_vector}"
+                )
+        else:
+            return NotImplemented
+
+    def __sub__(self, other: "UnitQuantity") -> "UnitQuantity":
+        """Subtract two quantities (must have same unit vector)."""
+        if isinstance(other, UnitQuantity):
+            if self.unit_vector == other.unit_vector:
+                return UnitQuantity(self.value - other.value, self.unit_vector)
+            else:
+                raise ValueError(
+                    f"Cannot subtract quantities with different units: {self.unit_vector} and {other.unit_vector}"
+                )
+        else:
+            return NotImplemented
+
+    def __eq__(self, other: "UnitQuantity") -> bool:
+        """Check if quantities are equal."""
+        if isinstance(other, UnitQuantity):
+            return self.value == other.value and self.unit_vector == other.unit_vector
+        return False
+
+    def __str__(self) -> str:
+        """String representation."""
+        return f"{self.value} {self.unit_vector}"
+
+    def __repr__(self) -> str:
+        """Detailed string representation."""
+        return f"UnitQuantity(value={self.value}, unit_vector={self.unit_vector})"
+
+
+# Convenience functions to create unit quantities
+def length(value: float, unit: str = "m") -> UnitQuantity:
+    """Create a length quantity."""
+    return UnitQuantity(value, UNIT_VECTORS[unit])
+
+
+def force(value: float, unit: str = "N") -> UnitQuantity:
+    """Create a force quantity."""
+    return UnitQuantity(value, UNIT_VECTORS[unit])
+
+
+def moment(value: float, unit: str = "N·m") -> UnitQuantity:
+    """Create a moment quantity."""
+    return UnitQuantity(value, UNIT_VECTORS[unit])
+
+
+def stress(value: float, unit: str = "Pa") -> UnitQuantity:
+    """Create a stress quantity."""
+    return UnitQuantity(value, UNIT_VECTORS[unit])
+
+
+def area(value: float, unit: str = "m²") -> UnitQuantity:
+    """Create an area quantity."""
+    return UnitQuantity(value, UNIT_VECTORS[unit])
+
+
+def moment_of_inertia(value: float, unit: str = "m⁴") -> UnitQuantity:
+    """Create a moment of inertia quantity."""
+    return UnitQuantity(value, UNIT_VECTORS[unit])
+
+
+def acceleration(value: float, unit: str = "m/s²") -> UnitQuantity:
+    """Create an acceleration quantity."""
+    return UnitQuantity(value, UNIT_VECTORS[unit])
+
+
+# Unit conversion factors (to convert from display units to SI base units)
+CONVERSION_FACTORS = {
+    # Length conversions to meters
+    "mm": 0.001,
+    "cm": 0.01,
+    "ft": 0.3048,
+    "in": 0.0254,
+    # Force conversions to newtons
+    "kN": 1000.0,
+    "lb": 4.44822,  # pound-force
+    "kip": 4448.22,
+    # Moment conversions to newton-meters
+    "kN·m": 1000.0,
+    "lb·ft": 1.35582,
+    "kip·ft": 1355.82,
+    # Stress conversions to pascals
+    "MPa": 1e6,
+    "GPa": 1e9,
+    "psi": 6894.76,
+    "ksi": 6894760.0,
+    # Area conversions to square meters
+    "mm²": 1e-6,
+    "ft²": 0.092903,
+    "in²": 6.4516e-4,
+    # Moment of inertia conversions to meter^4
+    "mm⁴": 1e-12,
+    "in⁴": 4.1623e-7,
+    # Acceleration conversions to m/s²
+    "ft/s²": 0.3048,
+}
 
 
 @dataclass
@@ -78,71 +316,70 @@ class UnitSystemManager:
             # Length conversions to meters
             "length": {
                 # SI base unit
-                Units.METER: UnitConversion(1.0, "m", 3),
+                "m": UnitConversion(1.0, "m", 3),
                 # Metric display units
-                Units.MILLIMETER: UnitConversion(0.001, "mm", 3),
-                Units.CENTIMETER: UnitConversion(0.01, "cm", 2),
+                "mm": UnitConversion(0.001, "mm", 3),
+                "cm": UnitConversion(0.01, "cm", 2),
                 # Imperial display units
-                Units.FOOT: UnitConversion(0.3048, "ft", 3),
-                Units.INCH: UnitConversion(0.0254, "in", 2),
+                "ft": UnitConversion(0.3048, "ft", 3),
+                "in": UnitConversion(0.0254, "in", 2),
             },
             # Force conversions to newtons
             "force": {
                 # SI base unit
-                Units.NEWTON: UnitConversion(1.0, "N", 1),
+                "N": UnitConversion(1.0, "N", 1),
                 # Metric display units
-                Units.KILONEWTON: UnitConversion(1000.0, "kN", 3),
+                "kN": UnitConversion(1000.0, "kN", 3),
                 # Imperial display units
-                Units.POUND: UnitConversion(4.44822, "lb", 3),
-                Units.KIP: UnitConversion(4448.22, "kip", 3),
+                "lb": UnitConversion(4.44822, "lb", 3),
+                "kip": UnitConversion(4448.22, "kip", 3),
             },
             # Moment conversions to newton-meters
             "moment": {
                 # SI base unit
-                Units.NEWTON_METER: UnitConversion(1.0, "N·m", 1),
+                "N·m": UnitConversion(1.0, "N·m", 1),
                 # Metric display units
-                Units.KILONEWTON_METER: UnitConversion(1000.0, "kN·m", 3),
+                "kN·m": UnitConversion(1000.0, "kN·m", 3),
                 # Imperial display units
-                Units.POUND_FOOT: UnitConversion(1.35582, "lb·ft", 3),
-                Units.KIP_FOOT: UnitConversion(1355.82, "kip·ft", 3),
+                "lb·ft": UnitConversion(1.35582, "lb·ft", 3),
+                "kip·ft": UnitConversion(1355.82, "kip·ft", 3),
             },
             # Stress/modulus conversions to pascals
             "stress": {
                 # SI base unit
-                Units.PASCAL: UnitConversion(1.0, "Pa", 0),
+                "Pa": UnitConversion(1.0, "Pa", 0),
                 # Metric display units
-                Units.MEGAPASCAL: UnitConversion(1e6, "MPa", 3),
-                Units.GIGAPASCAL: UnitConversion(1e9, "GPa", 3),
+                "MPa": UnitConversion(1e6, "MPa", 3),
+                "GPa": UnitConversion(1e9, "GPa", 3),
                 # Imperial display units
-                Units.PSI: UnitConversion(6894.76, "psi", 0),
-                Units.KSI: UnitConversion(6894760.0, "ksi", 3),
+                "psi": UnitConversion(6894.76, "psi", 0),
+                "ksi": UnitConversion(6894760.0, "ksi", 3),
             },
             # Area conversions to square meters
             "area": {
                 # SI base unit
-                Units.SQUARE_METER: UnitConversion(1.0, "m²", 6),
+                "m²": UnitConversion(1.0, "m²", 6),
                 # Metric display units
-                Units.SQUARE_MILLIMETER: UnitConversion(1e-6, "mm²", 3),
+                "mm²": UnitConversion(1e-6, "mm²", 3),
                 # Imperial display units
-                Units.SQUARE_FOOT: UnitConversion(0.092903, "ft²", 4),
-                Units.SQUARE_INCH: UnitConversion(6.4516e-4, "in²", 4),
+                "ft²": UnitConversion(0.092903, "ft²", 4),
+                "in²": UnitConversion(6.4516e-4, "in²", 4),
             },
             # Moment of inertia conversions to meter^4
             "moment_of_inertia": {
                 # SI base unit
-                Units.METER_TO_FOURTH: UnitConversion(1.0, "m⁴", 9),
+                "m⁴": UnitConversion(1.0, "m⁴", 9),
                 # Metric display units
-                Units.MILLIMETER_TO_FOURTH: UnitConversion(1e-12, "mm⁴", 3),
+                "mm⁴": UnitConversion(1e-12, "mm⁴", 3),
                 # Imperial display units
-                Units.INCH_TO_FOURTH: UnitConversion(4.1623e-7, "in⁴", 6),
-                Units.POUND_FOOT_SECOND_SQUARED: UnitConversion(0.0421401, "lb·ft²", 6),
+                "in⁴": UnitConversion(4.1623e-7, "in⁴", 6),
             },
             # Acceleration conversions to m/s²
             "acceleration": {
                 # SI base unit
-                Units.METER_PER_SECOND_SQUARED: UnitConversion(1.0, "m/s²", 2),
+                "m/s²": UnitConversion(1.0, "m/s²", 2),
                 # Imperial display units
-                Units.FOOT_PER_SECOND_SQUARED: UnitConversion(0.3048, "ft/s²", 2),
+                "ft/s²": UnitConversion(0.3048, "ft/s²", 2),
             },
         }
 
@@ -153,27 +390,13 @@ class UnitSystemManager:
     def get_preferred_unit(self, unit_type: str) -> str:
         """Get the preferred unit for display in the current system."""
         preferred_units = {
-            "length": Units.METER if self.system == "metric" else Units.FOOT,
-            "force": Units.KILONEWTON if self.system == "metric" else Units.POUND,
-            "moment": (
-                Units.KILONEWTON_METER if self.system == "metric" else Units.POUND_FOOT
-            ),
-            "stress": Units.GIGAPASCAL if self.system == "metric" else Units.KSI,
-            "area": (
-                Units.SQUARE_MILLIMETER
-                if self.system == "metric"
-                else Units.SQUARE_INCH
-            ),
-            "moment_of_inertia": (
-                Units.MILLIMETER_TO_FOURTH
-                if self.system == "metric"
-                else Units.INCH_TO_FOURTH
-            ),
-            "acceleration": (
-                Units.METER_PER_SECOND_SQUARED
-                if self.system == "metric"
-                else Units.FOOT_PER_SECOND_SQUARED
-            ),
+            "length": "m" if self.system == "metric" else "ft",
+            "force": "kN" if self.system == "metric" else "lb",
+            "moment": "kN·m" if self.system == "metric" else "lb·ft",
+            "stress": "GPa" if self.system == "metric" else "ksi",
+            "area": "mm²" if self.system == "metric" else "in²",
+            "moment_of_inertia": "mm⁴" if self.system == "metric" else "in⁴",
+            "acceleration": "m/s²" if self.system == "metric" else "ft/s²",
         }
         return preferred_units[unit_type]
 

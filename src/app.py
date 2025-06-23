@@ -9,12 +9,18 @@ from flask_login import current_user
 from timber import Load, Member, Model, Point, Support, solve_with_diagnostics
 from timber.extensions import bcrypt, db, login_manager, migrate
 from timber.units import (
+    area,
     convert_from_display,
     convert_to_display,
+    force,
     get_display_unit,
     get_unit_conversion_info,
     get_unit_system,
+    length,
+    moment,
+    moment_of_inertia,
     set_unit_system,
+    stress,
 )
 
 # -------------------------------------------------------------------
@@ -118,10 +124,36 @@ def create_app(config_object: object | str | None = None) -> Flask:
 
             filtered_points = [p for p in points_in if p["id"] in referenced_ids]
 
+            def make_point(p):
+                return Point(
+                    id=p["id"],
+                    x=length(p["x"]),
+                    y=length(p["y"]),
+                    z=length(p.get("z", 0.0)),
+                )
+
+            def make_member(m):
+                return Member(
+                    start=m["start"],
+                    end=m["end"],
+                    E=stress(m.get("E", 200e9)),
+                    A=area(m.get("A", 0.01)),
+                    I=moment_of_inertia(m.get("I", 1e-6)),
+                )
+
+            def make_load(l):
+                return Load(
+                    point=l["point"],
+                    fx=force(l.get("fx", 0.0)),
+                    fy=force(l.get("fy", 0.0)),
+                    mz=moment(l.get("mz", 0.0)),
+                    amount=force(l.get("amount", 0.0)),
+                )
+
             model = Model(
-                points=[Point(**p) for p in filtered_points],
-                members=[Member(**m) for m in members_in],
-                loads=[Load(**l) for l in loads_in],
+                points=[make_point(p) for p in filtered_points],
+                members=[make_member(m) for m in members_in],
+                loads=[make_load(l) for l in loads_in],
                 supports=[Support(**s) for s in supports_in],
             )
         except (TypeError, KeyError) as exc:
