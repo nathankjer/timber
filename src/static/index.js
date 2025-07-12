@@ -476,51 +476,6 @@ function axisInfo() {
 
 const axisDims = { x: "width", y: "height", z: "depth" };
 
-function planeCorners(el) {
-  // If the plane is defined by points, return them directly
-  if (el.points) {
-    return el.points;
-  }
-
-  // Legacy: if not point-based, calculate from dimensions
-  const l = (el.length ?? 40) / 2;
-  const w = (el.width ?? 40) / 2;
-  const n = (el.normal || "Z").toUpperCase();
-  if (n === "X") {
-    return [
-      { x: el.x, y: el.y - l, z: el.z - w },
-      { x: el.x, y: el.y + l, z: el.z - w },
-      { x: el.x, y: el.y + l, z: el.z + w },
-      { x: el.x, y: el.y - l, z: el.z + w },
-    ];
-  } else if (n === "Y") {
-    return [
-      { x: el.x - l, y: el.y, z: el.z - w },
-      { x: el.x + l, y: el.y, z: el.z - w },
-      { x: el.x + l, y: el.y, z: el.z + w },
-      { x: el.x - l, y: el.y, z: el.z + w },
-    ];
-  }
-  return [
-    { x: el.x - l, y: el.y - w, z: el.z },
-    { x: el.x + l, y: el.y - w, z: el.z },
-    { x: el.x + l, y: el.y + w, z: el.z },
-    { x: el.x - l, y: el.y + w, z: el.z },
-  ];
-}
-
-function planeScreenRect(el) {
-  const pts = planeCorners(el).map(screenCoords);
-  const xs = pts.map((p) => p.x);
-  const ys = pts.map((p) => p.y);
-  return {
-    left: Math.min(...xs),
-    right: Math.max(...xs),
-    top: Math.min(...ys),
-    bottom: Math.max(...ys),
-  };
-}
-
 function nearestPointOnLine(p, a, b) {
   const ab = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
   const ap = { x: p.x - a.x, y: p.y - a.y, z: p.z - a.z };
@@ -560,34 +515,6 @@ function getSnapPoints(ignoreId) {
           const midZ = (e.points[0].z + e.points[1].z) / 2;
           pts.push({ x: midX, y: midY, z: midZ, kind: "Midpoint" });
         }
-      } else if (e.type === "Plane") {
-        // Point-based plane
-        e.points.forEach((p) => {
-          pts.push({ ...p, kind: "PlaneCorner" });
-        });
-
-        // Add edge midpoints
-        const edges = [
-          [0, 1],
-          [1, 2],
-          [2, 3],
-          [3, 0],
-        ];
-        edges.forEach(([i, j]) => {
-          const midX = (e.points[i].x + e.points[j].x) / 2;
-          const midY = (e.points[i].y + e.points[j].y) / 2;
-          const midZ = (e.points[i].z + e.points[j].z) / 2;
-          pts.push({ x: midX, y: midY, z: midZ, kind: "PlaneEdgeMid" });
-        });
-
-        // Add center of plane
-        const centerX =
-          e.points.reduce((sum, p) => sum + p.x, 0) / e.points.length;
-        const centerY =
-          e.points.reduce((sum, p) => sum + p.y, 0) / e.points.length;
-        const centerZ =
-          e.points.reduce((sum, p) => sum + p.z, 0) / e.points.length;
-        pts.push({ x: centerX, y: centerY, z: centerZ, kind: "PlaneCenter" });
       }
     } else {
       // Legacy fallback for any remaining elements
@@ -615,10 +542,6 @@ function getSnapPoints(ignoreId) {
         const midY = (e.y + (e.y2 ?? e.y)) / 2;
         const midZ = (e.z + (e.z2 ?? e.z)) / 2;
         pts.push({ x: midX, y: midY, z: midZ, kind: "Midpoint" });
-      } else if (e.type === "Plane") {
-        // Legacy dimension-based plane
-        const corners = planeCorners(e);
-        corners.forEach((c) => pts.push({ ...c, kind: "PlaneCorner" }));
       }
     }
   });
@@ -682,52 +605,7 @@ function applySnapping(el) {
 
   if (el.points) {
     // All elements now use points array
-    if (el.type === "Plane") {
-      // For planes, maintain object integrity by moving the entire object
-      // Find the closest snap point to any of the object's points
-      let bestSnap = null;
-      let bestDist = SNAP_PIXELS;
-      let closestPointIndex = -1;
-
-      el.points.forEach((p, i) => {
-        const sc = screenCoords(p);
-        pts.forEach((snapPt) => {
-          const d = distanceScreen(sc, screenCoords(snapPt));
-          if (d < bestDist) {
-            bestDist = d;
-            bestSnap = snapPt;
-            closestPointIndex = i;
-          }
-        });
-        lines.forEach((line) => {
-          const near = nearestPointOnLine(p, line.p1, line.p2);
-          const d = distanceScreen(sc, screenCoords(near));
-          if (d < bestDist) {
-            bestDist = d;
-            bestSnap = near;
-            closestPointIndex = i;
-          }
-        });
-      });
-
-      if (bestSnap && closestPointIndex >= 0) {
-        // Calculate the offset needed to move the closest point to the snap point
-        const closestPoint = el.points[closestPointIndex];
-        const offsetX = bestSnap.x - closestPoint.x;
-        const offsetY = bestSnap.y - closestPoint.y;
-        const offsetZ = bestSnap.z - closestPoint.z;
-
-        // Move all points of the object by the same offset
-        el.points.forEach((p) => {
-          p.x += offsetX;
-          p.y += offsetY;
-          p.z += offsetZ;
-        });
-      }
-    } else {
-      // For other elements (Member, Load, Support), snap each point individually
-      el.points.forEach((p) => snapObj(p));
-    }
+    el.points.forEach((p) => snapObj(p));
   } else {
     // Legacy fallback for any remaining elements
     if (el.type === "Support") {
@@ -754,8 +632,6 @@ function applySnapping(el) {
       el.x2 = p2.x;
       el.y2 = p2.y;
       el.z2 = p2.z;
-    } else if (el.type === "Plane") {
-      snapObj(el);
     } else {
       snapObj(el);
     }
@@ -974,72 +850,6 @@ async function renderProperties(force = false) {
         });
       } else if (el.type === "Load") {
         await addNumberInput(form, "amount", "amount", el, "force", -1, null, el);
-      } else if (el.type === "Plane") {
-        if (!el.material) el.material = "wood";
-        const materialDiv = document.createElement("div");
-        materialDiv.className = "mb-2";
-        materialDiv.innerHTML = `
-          <label class='form-label'>Material</label>
-          <select id='material-type' class='form-select form-select-sm w-auto d-inline'>
-            <option value='wood' ${el.material === "wood" ? "selected" : ""}>Wood</option>
-            <option value='steel' ${el.material === "steel" ? "selected" : ""}>Steel</option>
-          </select>
-        `;
-        form.appendChild(materialDiv);
-        const matSel = materialDiv.querySelector("#material-type");
-        el._propertyInputs["material"] = matSel;
-        matSel.addEventListener("change", async (ev) => {
-          el.material = ev.target.value;
-          if (el.material === "wood") {
-            el.E = 10e9;
-            el.density = 500;
-          } else if (el.material === "steel") {
-            el.E = 200e9;
-            el.density = 7800;
-          }
-          el.mass = calculateMass(el);
-          updatePropertyFieldValues();
-          saveState();
-        });
-        if (el.material === "wood") {
-          el.E = 10e9;
-          el.density = 500;
-        } else if (el.material === "steel") {
-          el.E = 200e9;
-          el.density = 7800;
-        }
-        if (!el.mass) {
-          el.mass = calculateMass(el);
-        }
-        // Add thickness field for planes
-        if (!el.thickness) el.thickness = 0.01;
-        await addNumberInput(form, "Thickness", "thickness", el, "length", -1, async () => {
-          el.mass = calculateMass(el);
-          updatePropertyFieldValues();
-          saveState();
-        }, el);
-        // Density
-        const density_conv = await convertValue(el.density, "density", "to_display");
-        const densityDiv = document.createElement("div");
-        densityDiv.className = "mb-2";
-        densityDiv.innerHTML = `<label class='form-label'>Density</label>
-          <div class='input-group input-group-sm'>
-            <input class='form-control' type='text' value='${density_conv.value.toFixed(1)}' disabled>
-            <span class='input-group-text'>${density_conv.symbol}</span>
-          </div>`;
-        el._propertyInputs["density"] = densityDiv.querySelector("input");
-        form.appendChild(densityDiv);
-        // Mass (calculated)
-        const mass_conv = await convertValue(el.mass, "mass", "to_display");
-        const massDiv = document.createElement("div");
-        massDiv.className = "mb-2";
-        massDiv.innerHTML = `<label class='form-label'>Mass (calculated)</label>
-          <div class='input-group input-group-sm'>
-            <input class='form-control' type='text' value='${mass_conv.value.toFixed(3)}' disabled>
-            <span class='input-group-text'>${mass_conv.symbol}</span>
-          </div>`;
-        el._propertyInputs["mass"] = massDiv.querySelector("input");
-        form.appendChild(massDiv);
       }
       pane.appendChild(form);
       document.getElementById("delete-btn").disabled = false;
@@ -1256,13 +1066,6 @@ async function render(updateProps = true) {
             type: "Member",
           });
         }
-      } else if (el.type === "Plane") {
-        (el.points || []).forEach((p) => {
-          const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
-          if (!pointMap.has(key)) {
-            pointMap.set(key, { ...p, type: el.type });
-          }
-        });
       }
     }
   });
@@ -1342,19 +1145,6 @@ async function render(updateProps = true) {
       arrow.setAttribute("points", `${b1x},${b1y} ${b2x},${b2y} ${tx},${ty}`);
       arrow.setAttribute("fill", "red");
       g.appendChild(arrow);
-    } else if (el.type === "Plane") {
-      // Always render planes - they should be visible in all views
-      const pts = el.points.map((p) => {
-        const pr = projectPoint(p);
-        return [
-          cx + (pr.x || 0) * globalThis.zoom,
-          cy + (pr.y || 0) * globalThis.zoom,
-        ];
-      });
-      shape = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-      shape.setAttribute("points", pts.map((pt) => pt.join(",")).join(" "));
-      shape.setAttribute("fill", "rgba(0,0,255,0.2)");
-      shape.setAttribute("stroke", "blue");
     } else if (el.type === "Support") {
       shape = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
       const p = projectPoint(el.points[0]);
@@ -1411,62 +1201,6 @@ async function addElement(type) {
     // Set material and density based on type
     base.material = "wood";
     base.density = 500;
-    // Calculate mass dynamically
-    base.mass = calculateMass(base);
-  } else if (type === "Plane") {
-    // Create plane with 4 corner points
-    const l = 40 / 2; // half length
-    const w = 40 / 2; // half width
-
-    // Determine normal direction based on current rotation
-    // Find the axis that's most aligned with the view direction
-    const matrix = getRotationMatrix();
-    const viewDir = [matrix[2][0], matrix[2][1], matrix[2][2]]; // Z axis of rotation matrix
-    const absX = Math.abs(viewDir[0]);
-    const absY = Math.abs(viewDir[1]);
-    const absZ = Math.abs(viewDir[2]);
-
-    let normal;
-    if (absX >= absY && absX >= absZ) {
-      normal = "X";
-    } else if (absY >= absZ) {
-      normal = "Y";
-    } else {
-      normal = "Z";
-    }
-
-    // Generate corner points based on normal direction
-    let points;
-    if (normal === "X") {
-      points = [
-        { x: base.x, y: base.y - l, z: base.z - w },
-        { x: base.x, y: base.y + l, z: base.z - w },
-        { x: base.x, y: base.y + l, z: base.z + w },
-        { x: base.x, y: base.y - l, z: base.z + w },
-      ];
-    } else if (normal === "Y") {
-      points = [
-        { x: base.x - l, y: base.y, z: base.z - w },
-        { x: base.x + l, y: base.y, z: base.z - w },
-        { x: base.x + l, y: base.y, z: base.z + w },
-        { x: base.x - l, y: base.y, z: base.z + w },
-      ];
-    } else {
-      // Z normal
-      points = [
-        { x: base.x - l, y: base.y - w, z: base.z },
-        { x: base.x + l, y: base.y - w, z: base.z },
-        { x: base.x + l, y: base.y + w, z: base.z },
-        { x: base.x - l, y: base.y + w, z: base.z },
-      ];
-    }
-
-    base.points = points;
-    base.normal = normal;
-    // Set material and density
-    base.material = "wood";
-    base.density = 500;
-    base.thickness = 0.01; // Default 10mm thickness
     // Calculate mass dynamically
     base.mass = calculateMass(base);
   } else if (type === "Load") {
@@ -1532,54 +1266,6 @@ function startDrag(ev) {
     else if (distanceScreen({ x: mx, y: my }, p2) < 16) dragMode = "end";
     else if (distanceToSegment2D({ x: mx, y: my }, p1, p2) < 6)
       dragMode = "body";
-  } else if (el.type === "Plane") {
-    // Check for edge/face dragging instead of individual points
-    if (el.type === "Plane") {
-      // For planes, check for edge dragging first
-      const pts = (el.points || []).map((p) => screenCoords(p));
-      if (pts.length >= 4) {
-        const edges = [
-          [pts[0], pts[1]], // edge 0-1
-          [pts[1], pts[2]], // edge 1-2
-          [pts[2], pts[3]], // edge 2-3
-          [pts[3], pts[0]], // edge 3-0
-        ];
-
-        for (let i = 0; i < edges.length; i++) {
-          const edge = edges[i];
-          const distance = distanceToSegment2D(
-            { x: mx, y: my },
-            edge[0],
-            edge[1],
-          );
-          if (distance < 8) {
-            dragMode = `edge-${i}`;
-            break;
-          }
-        }
-      }
-      
-      // If no edge was clicked, it's a face drag (body drag)
-      if (dragMode === "body") {
-        dragMode = "face";
-      }
-    }
-
-    // If no edge/face was clicked, allow body drag
-    if (dragMode === "body") {
-      // Check for edge dragging for legacy dimension-based elements
-      if (!el.points) {
-        const rect = planeScreenRect(el);
-        const edgeThreshold = 8;
-
-        // Check if mouse is near edges for resizing
-        if (Math.abs(mx - rect.left) < edgeThreshold) dragMode = "left";
-        else if (Math.abs(mx - rect.right) < edgeThreshold) dragMode = "right";
-        else if (Math.abs(my - rect.top) < edgeThreshold) dragMode = "top";
-        else if (Math.abs(my - rect.bottom) < edgeThreshold)
-          dragMode = "bottom";
-      }
-    }
   } else {
     dragMode = "body";
   }
@@ -1630,82 +1316,6 @@ async function onDrag(ev) {
       el.points[1].x = dragOrig.points[1].x + (delta.x || 0);
       el.points[1].y = dragOrig.points[1].y + (delta.y || 0);
       el.points[1].z = dragOrig.points[1].z + (delta.z || 0);
-    }
-  } else if (el.type === "Plane") {
-    if (el.points) {
-      // Point-based plane with edge dragging
-      if (dragMode.startsWith("edge-")) {
-        const edgeIndex = parseInt(dragMode.split("-")[1], 10);
-        const edges = [
-          [0, 1], // edge 0-1
-          [1, 2], // edge 1-2
-          [2, 3], // edge 2-3
-          [3, 0], // edge 3-0
-        ];
-
-        if (edgeIndex < edges.length) {
-          const [p1Index, p2Index] = edges[edgeIndex];
-          const p1 = el.points[p1Index];
-          const p2 = el.points[p2Index];
-          const orig_p1 = dragOrig.points[p1Index];
-          const orig_p2 = dragOrig.points[p2Index];
-
-          // Apply orthogonal constraint
-          const constrainedDelta = constrainToOrthogonal(
-            delta,
-            edgeIndex,
-            "Plane",
-          );
-
-          // Move both points of the edge
-          p1.x = orig_p1.x + (constrainedDelta.x || 0);
-          p1.y = orig_p1.y + (constrainedDelta.y || 0);
-          p1.z = orig_p1.z + (constrainedDelta.z || 0);
-          p2.x = orig_p2.x + (constrainedDelta.x || 0);
-          p2.y = orig_p2.y + (constrainedDelta.y || 0);
-          p2.z = orig_p2.z + (constrainedDelta.z || 0);
-        }
-      } else if (dragMode === "face") {
-        // Face drag - move all points (move the whole plane)
-        el.points.forEach((p, i) => {
-          const orig_p = dragOrig.points[i];
-          p.x = orig_p.x + (delta.x || 0);
-          p.y = orig_p.y + (delta.y || 0);
-          p.z = orig_p.z + (delta.z || 0);
-        });
-      } else {
-        // Body drag - move all points (fallback)
-        el.points.forEach((p, i) => {
-          const orig_p = dragOrig.points[i];
-          p.x = orig_p.x + (delta.x || 0);
-          p.y = orig_p.y + (delta.y || 0);
-          p.z = orig_p.z + (delta.z || 0);
-        });
-      }
-    } else {
-      // Legacy dimension-based plane
-      const info = axisInfo(currentView);
-      const dh = dx;
-      const dv = dy;
-      const dhWorld = dh * info.h.sign;
-      const dvWorld = dv * info.v.sign;
-      if (dragMode === "left") {
-        el.length = Math.max(1, dragOrig.length - dh);
-        el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
-      } else if (dragMode === "right") {
-        el.length = Math.max(1, dragOrig.length + dh);
-        el[info.h.axis] = dragOrig[info.h.axis] + dhWorld / 2;
-      } else if (dragMode === "top") {
-        el.width = Math.max(1, dragOrig.width - dv);
-        el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
-      } else if (dragMode === "bottom") {
-        el.width = Math.max(1, dragOrig.width + dv);
-        el[info.v.axis] = dragOrig[info.v.axis] + dvWorld / 2;
-      } else {
-        ["x", "y", "z"].forEach((k) => {
-          if (delta[k] !== undefined) el[k] = dragOrig[k] + delta[k];
-        });
-      }
     }
   } else if (el.type === "Support") {
     // Support elements can be dragged by their position
@@ -1863,32 +1473,6 @@ async function loadState() {
           obj.density = 500;
           obj.mass = calculateMass(obj);
         }
-      } else if (obj.type === "Plane") {
-        if (e.points) {
-          // Point-based plane
-          obj.points = e.points;
-          obj.normal = e.normal;
-          // Handle material and density
-          obj.material = e.material ?? "wood";
-          obj.density = e.density ?? 500;
-          obj.thickness = e.thickness ?? 0.01;
-          // Recalculate mass if not set or if material/density/thickness changed
-          if (!e.mass || e.material !== obj.material || e.density !== obj.density || e.thickness !== obj.thickness) {
-            obj.mass = calculateMass(obj);
-          } else {
-            obj.mass = e.mass;
-          }
-        } else {
-          // Legacy dimension-based plane
-          obj.length = e.length ?? 40;
-          obj.width = e.width ?? 40;
-          obj.normal = e.normal ?? currentView[1];
-          // Set default material and density for legacy elements
-          obj.material = "wood";
-          obj.density = 500;
-          obj.thickness = 0.01;
-          obj.mass = calculateMass(obj);
-        }
       } else if (obj.type === "Load") {
         if (e.points) {
           // New point-based format
@@ -1980,8 +1564,6 @@ document.querySelectorAll(".view-btn").forEach((btn) => {
 });
 
 function buildModel() {
-  // This function has been refactored to treat planes as simple braced frames
-  // rather than fine-grained meshes, based on user feedback.
 
   const points = [];
   const members = [];
@@ -2023,36 +1605,6 @@ function buildModel() {
         ux: el.ux !== false, uy: el.uy !== false, uz: el.uz !== false,
         rx: el.rx !== false, ry: el.ry !== false, rz: el.rz !== false,
       });
-    }
-  });
-
-  // Process Planes into simple frame structures
-  globalThis.elements.forEach((el) => {
-    if (el.type === "Plane") {
-      if (!el.points || el.points.length < 4) return;
-      
-      const p = el.points.map(pt => getOrAddPoint(pt));
-
-      const E = el.E ?? (el.material === 'steel' ? 200e9 : 10e9);
-      const G = E / (2 * (1 + 0.3));
-      const t = el.thickness ?? 0.01;
-      
-      // Assume square cross-section for generated members
-      const A = t * t;
-      const I = Math.pow(t, 4) / 12;
-      const J = 0.1406 * Math.pow(t, 4);
-
-      const memberProps = { E, A, I, G, J };
-      
-      // Edges
-      members.push({ start: p[0], end: p[1], ...memberProps });
-      members.push({ start: p[1], end: p[2], ...memberProps });
-      members.push({ start: p[2], end: p[3], ...memberProps });
-      members.push({ start: p[3], end: p[0], ...memberProps });
-      
-      // Diagonals for shear stiffness
-      members.push({ start: p[0], end: p[2], ...memberProps });
-      members.push({ start: p[1], end: p[3], ...memberProps });
     }
   });
 
@@ -2698,43 +2250,6 @@ function renderCalculationResults() {
 
 loadState();
 
-function constrainToOrthogonal(delta, faceIndex) {
-  // For planes: constrain edge movements to be orthogonal to the edge direction
-  const constrained = { x: 0, y: 0, z: 0 };
-
-  // Get the current rotation matrix to understand the view orientation
-  const matrix = getRotationMatrix();
-  
-  // For plane edges, we need to determine which direction the edge is pointing
-  // in the current view and constrain movement to be perpendicular to that direction
-  
-  // Edge definitions for a plane (assuming standard rectangular plane)
-  const edgeDirections = [
-    [0, 1], // edge 0-1: typically along Y axis
-    [1, 2], // edge 1-2: typically along X axis  
-    [2, 3], // edge 2-3: typically along Y axis
-    [3, 0], // edge 3-0: typically along X axis
-  ];
-
-  if (faceIndex < edgeDirections.length) {
-    // For now, use a simplified approach: allow movement in the plane
-    // that contains the edge, but constrain to the two axes of that plane
-    const edgePlanes = [
-      ["y", "z"], // edge 0-1: Y-Z plane
-      ["x", "z"], // edge 1-2: X-Z plane
-      ["y", "z"], // edge 2-3: Y-Z plane
-      ["x", "z"], // edge 3-0: X-Z plane
-    ];
-
-    const axes = edgePlanes[faceIndex];
-    axes.forEach((axis) => {
-      constrained[axis] = delta[axis] || 0;
-    });
-  }
-
-  return constrained;
-}
-
 function selectElement(id) {
   globalThis.selectedId = id;
   render(false); // Don't update properties here, we'll do it directly
@@ -2761,11 +2276,6 @@ function calculateMass(el) {
     const area = el.A || 0.01;
     const length = calculateLength(el);
     return area * length * el.density;
-  } else if (el.type === "Plane") {
-    // Mass = Area × Thickness × Density
-    const area = calculateArea(el);
-    const thickness = el.thickness || 0.01;
-    return area * thickness * el.density;
   }
   
   return 0;
@@ -2783,31 +2293,4 @@ function calculateLength(el) {
     );
   }
   return 0.1; // Default length
-}
-
-// Helper function to calculate area of a plane
-function calculateArea(el) {
-  if (el.points && el.points.length >= 3) {
-    // Newell's method for calculating the area of a 3D polygon.
-    // This is robust and works for non-planar polygons as well.
-    let ax = 0;
-    let ay = 0;
-    let az = 0;
-    for (let i = 0; i < el.points.length; i++) {
-      const p1 = el.points[i];
-      const p2 = el.points[(i + 1) % el.points.length];
-      ax += (p1.y - p2.y) * (p1.z + p2.z);
-      ay += (p1.z - p2.z) * (p1.x + p2.x);
-      az += (p1.x - p2.x) * (p1.y + p2.y);
-    }
-    // The magnitude of the resulting vector is twice the area.
-    return Math.sqrt(ax * ax + ay * ay + az * az) / 2;
-  }
-  
-  // Fallback for legacy elements that are not defined by points.
-  if (el.length && el.width) {
-    return (el.length || 0) * (el.width || 0);
-  }
-
-  return 0; // If no points or dimensions, area is zero.
 }

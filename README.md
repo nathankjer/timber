@@ -65,7 +65,6 @@ _A single-page web application that lets **non-experts** solve and **visualise c
 |---------|------|-------------|-------------------|
 | **Joint** | 0-D | Mass-less node; connection point for other elements | position (x y z) |
 | **Member** | 1-D | Prismatic truss/beam element | mass, x y z, θx θy θz |
-| **Plane** | 2-D | Rigid/elastic plate | mass, x y z, θx θy θz |
 | **Load** | — | Force + moment on point/edge/face | Fx Fy Fz, Mx My Mz |
 | **Support** | — | Boundary condition | type (fixed, pinned, roller, ball, custom), stiffness |
 

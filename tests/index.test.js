@@ -22,8 +22,6 @@ const {
   distanceToSegment2D,
   axisInfo,
   nearestPointOnLine,
-  planeCorners,
-  planeScreenRect,
 
   /* snapping / model */
   getSnapPoints,
@@ -58,14 +56,11 @@ const {
   convertValue,
 
   /* geometry utilities */
-  constrainToOrthogonal,
   isPointInPolygon,
 
   /* mass calculation */
   calculateMass,
   calculateLength,
-  calculateArea,
-  calculateVolume,
 
   /* pan controls */
   onPan,
@@ -196,28 +191,6 @@ describe("geometry helpers (pure maths)", () => {
 });
 
 //--------------------------------------------------------------------
-//  PLANE HELPERS
-//--------------------------------------------------------------------
-
-describe("plane helpers", () => {
-  test("planeCorners returns four corner points for Z‑normal", () => {
-    const el = { x: 0, y: 0, z: 0, length: 40, width: 20, normal: "Z" };
-    const corners = planeCorners(el);
-    expect(corners).toHaveLength(4);
-    expect(corners).toContainEqual({ x: -20, y: -10, z: 0 });
-    expect(corners).toContainEqual({ x: 20, y: 10, z: 0 });
-  });
-
-  test("planeScreenRect projects correct pixel size in +Z view", () => {
-    setCurrentView("+Z");
-    const el = { x: 0, y: 0, z: 0, length: 40, width: 20, normal: "Z" };
-    const rect = planeScreenRect(el);
-    expect(rect.right - rect.left).toBeCloseTo(40 * global.zoom);
-    expect(rect.bottom - rect.top).toBeCloseTo(20 * global.zoom);
-  });
-});
-
-//--------------------------------------------------------------------
 //  SNAPPING UTILITIES
 //--------------------------------------------------------------------
 
@@ -258,13 +231,11 @@ describe("buildModel", () => {
 
   test("includes gravity loads from elements with mass", () => {
     addElement("Member");
-    addElement("Plane");
 
     // Set masses for the elements
     const elements = global.elements || [];
     elements.forEach((el) => {
       if (el.type === "Member") el.mass = 20;
-      if (el.type === "Plane") el.mass = 100;
     });
 
     const model = buildModel();
@@ -299,24 +270,6 @@ describe("buildModel", () => {
     const memberMass = calculateMass(member);
     const expectedMemberMass = 0.01 * 1 * 7800; // A × L × density
     expect(memberMass).toBeCloseTo(expectedMemberMass, 1);
-    
-    // Test plane mass calculation
-    const plane = {
-      type: "Plane",
-      material: "wood",
-      density: 500,
-      thickness: 0.02, // 20mm thickness
-      points: [
-        { x: 0, y: 0, z: 0 },
-        { x: 1, y: 0, z: 0 },
-        { x: 1, y: 1, z: 0 },
-        { x: 0, y: 1, z: 0 }
-      ] // 1m × 1m area
-    };
-    
-    const planeMass = calculateMass(plane);
-    const expectedPlaneMass = 1 * 0.02 * 500; // Area × thickness × density
-    expect(planeMass).toBeCloseTo(expectedPlaneMass, 1);
   });
 
   test("sets correct default materials for different element types", () => {
@@ -357,35 +310,6 @@ describe("buildModel", () => {
     const newMass = member.mass;
     
     // Mass should have doubled since area doubled
-    expect(newMass).toBeCloseTo(initialMass * 2, 1);
-  });
-
-  test("mass updates when thickness changes", async () => {
-    // Create a plane element
-    addElement("Plane");
-    const elements = global.elements || [];
-    const plane = elements.find(el => el.type === "Plane");
-    
-    if (!plane) {
-      // Skip test if no plane was created
-      return;
-    }
-    
-    // Set initial properties
-    plane.material = "wood";
-    plane.density = 500;
-    plane.thickness = 0.01; // 10mm
-    plane.mass = calculateMass(plane);
-    
-    const initialMass = plane.mass;
-    
-    // Change the thickness
-    plane.thickness = 0.02; // 20mm
-    plane.mass = calculateMass(plane);
-    
-    const newMass = plane.mass;
-    
-    // Mass should have doubled since thickness doubled
     expect(newMass).toBeCloseTo(initialMass * 2, 1);
   });
 });
@@ -893,33 +817,6 @@ describe("convertValue", () => {
 //--------------------------------------------------------------------
 //  GEOMETRY UTILITIES
 //--------------------------------------------------------------------
-
-describe("constrainToOrthogonal", () => {
-  test("constrains plane edge movements to orthogonal axes", () => {
-    const delta = { x: 5, y: 3, z: 2 };
-
-    // Edge 0-1 (Y-Z plane)
-    const result1 = constrainToOrthogonal(delta, 0);
-    expect(result1.x).toBe(0);
-    expect(result1.y).toBe(3);
-    expect(result1.z).toBe(2);
-
-    // Edge 1-2 (X-Z plane)
-    const result2 = constrainToOrthogonal(delta, 1);
-    expect(result2.x).toBe(5);
-    expect(result2.y).toBe(0);
-    expect(result2.z).toBe(2);
-  });
-
-  test("handles out of bounds indices gracefully", () => {
-    const delta = { x: 5, y: 3, z: 2 };
-
-    const result1 = constrainToOrthogonal(delta, 10);
-    expect(result1.x).toBe(0);
-    expect(result1.y).toBe(0);
-    expect(result1.z).toBe(0);
-  });
-});
 
 describe("isPointInPolygon", () => {
   test("returns true for point inside polygon", () => {
