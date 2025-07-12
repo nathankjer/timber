@@ -218,3 +218,177 @@ def test_simulate_dynamics_empty_model():
     model = Model()
     frames = simulate_dynamics(model, step=0.1, simulation_time=1.0)
     assert frames == []
+
+
+def test_simulate_dynamics_multiple_frames():
+    """Test that simulate_dynamics generates the correct number of frames."""
+    model = Model(
+        points=[Point(id=1, x=length(0.0), y=length(0.0))],
+        loads=[Load(point=1, fy=force(-9.81), is_gravity_load=True)],
+        supports=[],
+    )
+    
+    # Test with 1-second steps for 5 seconds
+    frames = simulate_dynamics(model, step=1.0, simulation_time=5.0)
+    
+    # Should have 6 frames (0, 1, 2, 3, 4, 5 seconds)
+    assert len(frames) == 6
+    
+    # Check that time values are correct
+    for i, frame in enumerate(frames):
+        assert frame["time"] == i
+        assert len(frame["points"]) == 1
+        point = frame["points"][0]
+        assert point["id"] == 1
+        assert "x" in point
+        assert "y" in point
+        assert "z" in point
+        assert "vy" in point  # Should have analytical velocity
+
+
+def test_simulate_dynamics_free_fall_physics():
+    """Test that the simulation correctly implements free fall physics.
+    
+    For an object in free fall (no air resistance), the equations are:
+    - a(t) = g (constant acceleration)
+    - v(t) = g * t (velocity at time t)
+    - d(t) = 0.5 * g * t^2 (displacement at time t)
+    
+    This test validates against the textbook table provided.
+    """
+    # Create a simple model: one point with mass, no supports (free fall)
+    model = Model(
+        points=[Point(id=1, x=length(0.0), y=length(0.0))],
+        loads=[Load(point=1, fy=force(-9.81), is_gravity_load=True)],  # 1kg mass * 9.81 m/s²
+        supports=[],  # No supports = free fall
+    )
+    
+    # Run simulation for 10 seconds with 1-second steps
+    frames = simulate_dynamics(model, step=1.0, simulation_time=10.0)
+    
+    # Should have 11 frames (0, 1, 2, ..., 10 seconds)
+    assert len(frames) == 11
+    
+    # Validate against textbook table
+    expected_displacements = [0, 0.5, 2, 4.5, 8, 12.5, 18, 24.5, 32, 40.5, 50]
+    expected_velocities = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    
+    for i, frame in enumerate(frames):
+        t = frame["time"]
+        assert t == i  # Time should match frame index
+        
+        # Get the point data
+        point = frame["points"][0]  # Only one point in our model
+        y_displacement = point["y"]  # Y displacement (should be negative for downward motion)
+        
+        # Convert to positive values for comparison with textbook
+        y_displacement_positive = abs(y_displacement)
+        
+        # Check displacement (allow some numerical tolerance)
+        expected_d = expected_displacements[i] * 9.81  # Convert g units to m/s²
+        assert abs(y_displacement_positive - expected_d) < 0.1, f"At t={t}s: expected {expected_d}, got {y_displacement_positive}"
+        
+        # Check velocity (analytical if present, else finite difference)
+        expected_v = expected_velocities[i] * 9.81
+        if "vy" in point:
+            velocity = abs(point["vy"])
+            assert abs(velocity - expected_v) < 0.1, f"At t={t}s: expected v={expected_v}, got v={velocity}"
+        elif i > 0:
+            prev_frame = frames[i-1]
+            prev_y = prev_frame["points"][0]["y"]
+            dt = frame["time"] - prev_frame["time"]
+            if dt > 0:
+                velocity = abs((point["y"] - prev_y) / dt)
+                assert abs(velocity - expected_v) < 0.5, f"At t={t}s: expected v={expected_v}, got v={velocity}"
+
+
+def test_simulate_dynamics_equilateral_triangle_free_fall():
+    """Test that an equilateral triangle structure falls as a connected unit.
+    
+    This test verifies that connected objects (three members forming a triangle)
+    fall together as one cohesive unit, maintaining their relative positions.
+    
+    Uses the same textbook table as the single point test.
+    """
+    # Create an equilateral triangle with side length 2 units
+    # Points at (0,0), (2,0), and (1,√3)
+    side_length = 2.0
+    height = side_length * math.sqrt(3) / 2
+    
+    model = Model(
+        points=[
+            Point(id=1, x=length(0.0), y=length(0.0)),           # Bottom left
+            Point(id=2, x=length(side_length), y=length(0.0)),    # Bottom right  
+            Point(id=3, x=length(side_length/2), y=length(height)), # Top
+        ],
+        members=[
+            Member(start=1, end=2, E=stress(200e9), A=area(0.01), I=moment_of_inertia(1e-6), J=moment_of_inertia(2e-6), G=stress(75e9)),  # Bottom
+            Member(start=1, end=3, E=stress(200e9), A=area(0.01), I=moment_of_inertia(1e-6), J=moment_of_inertia(2e-6), G=stress(75e9)),  # Left
+            Member(start=2, end=3, E=stress(200e9), A=area(0.01), I=moment_of_inertia(1e-6), J=moment_of_inertia(2e-6), G=stress(75e9)),  # Right
+        ],
+        loads=[
+            Load(point=1, fy=force(-9.81), is_gravity_load=True),  # 1kg mass at each point
+            Load(point=2, fy=force(-9.81), is_gravity_load=True),
+            Load(point=3, fy=force(-9.81), is_gravity_load=True),
+        ],
+        supports=[],  # No supports = free fall
+    )
+    
+    # Run simulation for 10 seconds with 1-second steps
+    frames = simulate_dynamics(model, step=1.0, simulation_time=10.0)
+    
+    # Should have 11 frames (0, 1, 2, ..., 10 seconds)
+    assert len(frames) == 11
+    
+    # Validate against textbook table - all points should fall together
+    expected_displacements = [0, 0.5, 2, 4.5, 8, 12.5, 18, 24.5, 32, 40.5, 50]
+    expected_velocities = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    
+    for i, frame in enumerate(frames):
+        t = frame["time"]
+        assert t == i  # Time should match frame index
+        
+        # Get all three points
+        points = frame["points"]
+        assert len(points) == 3
+        
+        # All points should have the same Y displacement from their initial positions (falling together)
+        # Initial positions: point 1 at y=0, point 2 at y=0, point 3 at y=height
+        initial_y_positions = [0.0, 0.0, height]
+        y_displacements = [abs(p["y"] - initial_y_positions[j]) for j, p in enumerate(points)]
+        
+        # Check that all points fall at the same rate
+        expected_d = expected_displacements[i] * 9.81  # Convert g units to m/s²
+        
+        for j, y_disp in enumerate(y_displacements):
+            assert abs(y_disp - expected_d) < 0.1, f"At t={t}s, point {j+1}: expected {expected_d}, got {y_disp}"
+        
+        # Check that the triangle maintains its shape (relative positions)
+        # Calculate the side lengths at this frame
+        p1 = points[0]
+        p2 = points[1] 
+        p3 = points[2]
+        
+        # Calculate current side lengths
+        side1_length = math.sqrt((p2["x"] - p1["x"])**2 + (p2["y"] - p1["y"])**2)
+        side2_length = math.sqrt((p3["x"] - p1["x"])**2 + (p3["y"] - p1["y"])**2)
+        side3_length = math.sqrt((p3["x"] - p2["x"])**2 + (p3["y"] - p2["y"])**2)
+        
+        # All sides should remain approximately equal (within 1% tolerance)
+        assert abs(side1_length - side2_length) < side_length * 0.01, f"At t={t}s: sides 1 and 2 differ by {abs(side1_length - side2_length)}"
+        assert abs(side1_length - side3_length) < side_length * 0.01, f"At t={t}s: sides 1 and 3 differ by {abs(side1_length - side3_length)}"
+        assert abs(side2_length - side3_length) < side_length * 0.01, f"At t={t}s: sides 2 and 3 differ by {abs(side2_length - side3_length)}"
+        
+        # Check velocity (analytical if present, else finite difference)
+        expected_v = expected_velocities[i] * 9.81
+        for j, point in enumerate(points):
+            if "vy" in point:
+                velocity = abs(point["vy"])
+                assert abs(velocity - expected_v) < 0.1, f"At t={t}s, point {j+1}: expected v={expected_v}, got v={velocity}"
+            elif i > 0:
+                prev_frame = frames[i-1]
+                prev_y = prev_frame["points"][j]["y"]
+                dt = frame["time"] - prev_frame["time"]
+                if dt > 0:
+                    velocity = abs((point["y"] - prev_y) / dt)
+                    assert abs(velocity - expected_v) < 0.5, f"At t={t}s, point {j+1}: expected v={expected_v}, got v={velocity}"

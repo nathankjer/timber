@@ -1662,6 +1662,217 @@ function buildModel() {
   return { points, members, loads, supports };
 }
 
+// Global variables for simulation
+let simulationFrames = null;
+let simulationFrameIndex = 0;
+let simulationPlaying = false;
+let simulationAnimationId = null;
+let originalElements = null;
+
+function updateSimScrubberUI() {
+  const scrubber = document.getElementById("sim-time-scrubber");
+  const timeDisplay = document.getElementById("sim-time-display");
+  const playBtn = document.getElementById("play-sim-btn");
+  
+  if (!simulationFrames || simulationFrames.length === 0) {
+    if (scrubber) scrubber.disabled = true;
+    if (scrubber) scrubber.value = 0;
+    if (timeDisplay) timeDisplay.textContent = "0.0s";
+    if (playBtn) {
+      playBtn.innerHTML = '<i class="bi bi-play-fill"></i>';
+      playBtn.disabled = false;
+    }
+    return;
+  }
+  
+  if (scrubber) {
+    scrubber.disabled = false;
+    scrubber.max = simulationFrames.length - 1;
+    // Only update scrubber value if not currently being dragged
+    if (!scrubber.matches(':active')) {
+      console.log("Updating scrubber value to:", simulationFrameIndex);
+      scrubber.value = simulationFrameIndex;
+    }
+  }
+  
+  const frame = simulationFrames[simulationFrameIndex];
+  if (timeDisplay) {
+    timeDisplay.textContent = frame ? `${frame.time.toFixed(2)}s` : "0.0s";
+  }
+  
+  if (playBtn) {
+    if (simulationPlaying) {
+      playBtn.innerHTML = '<i class="bi bi-pause-fill"></i>';
+    } else {
+      playBtn.innerHTML = '<i class="bi bi-play-fill"></i>';
+    }
+    playBtn.disabled = false;
+  }
+}
+
+function showSimulationFrame(idx) {
+  if (!simulationFrames || simulationFrames.length === 0) return;
+  
+  simulationFrameIndex = Math.max(0, Math.min(idx, simulationFrames.length - 1));
+  const frame = simulationFrames[simulationFrameIndex];
+  
+  console.log(`Displaying frame ${idx}:`, frame);
+  
+  if (frame && frame.points) {
+    // Create a map of frame points by ID for quick lookup
+    const framePointsById = new Map();
+    frame.points.forEach((p) => {
+      framePointsById.set(p.id, p);
+    });
+    
+    console.log(`Frame points by ID:`, framePointsById);
+    
+    // Update all element points by their IDs
+    globalThis.elements.forEach((el) => {
+      if (el.points) {
+        el.points.forEach((elementPoint) => {
+          // Each element point should have an ID that corresponds to a frame point
+          // If the element point doesn't have an ID, we need to assign one
+          if (!elementPoint.id) {
+            // Find the frame point that matches this element point's original position
+            const firstFrame = simulationFrames[0];
+            if (firstFrame && firstFrame.points) {
+              const matchingFramePoint = firstFrame.points.find(fp => 
+                Math.abs(fp.x - elementPoint.x) < 1e-6 && 
+                Math.abs(fp.y - elementPoint.y) < 1e-6 && 
+                Math.abs(fp.z - elementPoint.z) < 1e-6
+              );
+              if (matchingFramePoint) {
+                elementPoint.id = matchingFramePoint.id;
+              }
+            }
+          }
+          
+          // Now update the element point with the frame point data
+          if (elementPoint.id && framePointsById.has(elementPoint.id)) {
+            const framePoint = framePointsById.get(elementPoint.id);
+            console.log(`Updating element point ${elementPoint.id} from (${elementPoint.x}, ${elementPoint.y}, ${elementPoint.z}) to (${framePoint.x}, ${framePoint.y}, ${framePoint.z})`);
+            elementPoint.x = framePoint.x;
+            elementPoint.y = framePoint.y;
+            elementPoint.z = framePoint.z;
+          } else {
+            console.log(`No frame point found for element point with ID: ${elementPoint.id}`);
+          }
+        });
+      }
+    });
+    
+    console.log(`Updated elements:`, globalThis.elements);
+    render(false);
+  }
+  
+  // Don't call updateSimScrubberUI here as it might interfere with manual scrubbing
+  // updateSimScrubberUI();
+}
+
+function stopSimulationPlayback() {
+  console.log("Stopping simulation playback, current frame:", simulationFrameIndex);
+  simulationPlaying = false;
+  if (simulationAnimationId) {
+    cancelAnimationFrame(simulationAnimationId);
+    simulationAnimationId = null;
+  }
+  updateSimScrubberUI();
+}
+
+function resetSimulationToStart() {
+  simulationFrameIndex = 0;
+  simulationPlaying = false;
+  if (simulationAnimationId) {
+    cancelAnimationFrame(simulationAnimationId);
+    simulationAnimationId = null;
+  }
+  
+  // Reset elements to original positions
+  if (originalElements) {
+    globalThis.elements = JSON.parse(JSON.stringify(originalElements));
+    // Re-assign IDs to the restored elements
+    if (simulationFrames && simulationFrames.length > 0 && simulationFrames[0].points) {
+      const firstFrame = simulationFrames[0];
+      globalThis.elements.forEach((el) => {
+        if (el.points) {
+          el.points.forEach((elementPoint) => {
+            const matchingFramePoint = firstFrame.points.find(fp => 
+              Math.abs(fp.x - elementPoint.x) < 1e-6 && 
+              Math.abs(fp.y - elementPoint.y) < 1e-6 && 
+              Math.abs(fp.z - elementPoint.z) < 1e-6
+            );
+            if (matchingFramePoint) {
+              elementPoint.id = matchingFramePoint.id;
+            }
+          });
+        }
+      });
+    }
+    render(false);
+  } else if (simulationFrames && simulationFrames.length > 0) {
+    const firstFrame = simulationFrames[0];
+    if (firstFrame && firstFrame.points) {
+      globalThis.elements.forEach((el) => {
+        if (el.points) {
+          el.points.forEach((p) => {
+            const framePoint = firstFrame.points.find(fp => fp.id === p.id);
+            if (framePoint) {
+              p.x = framePoint.x;
+              p.y = framePoint.y;
+              p.z = framePoint.z;
+            }
+          });
+        }
+      });
+      render(false);
+    }
+  }
+  
+  updateSimScrubberUI();
+}
+
+function initializeSimulation(frames) {
+  simulationFrames = frames;
+  simulationFrameIndex = 0;
+  simulationPlaying = false;
+  if (simulationAnimationId) {
+    cancelAnimationFrame(simulationAnimationId);
+    simulationAnimationId = null;
+  }
+  
+  // Store original element positions BEFORE any simulation starts
+  originalElements = JSON.parse(JSON.stringify(globalThis.elements));
+  
+  // Assign IDs to element points based on the first frame
+  if (frames && frames.length > 0 && frames[0].points) {
+    const firstFrame = frames[0];
+    globalThis.elements.forEach((el) => {
+      if (el.points) {
+        el.points.forEach((elementPoint) => {
+          // Find the frame point that matches this element point's position
+          const matchingFramePoint = firstFrame.points.find(fp => 
+            Math.abs(fp.x - elementPoint.x) < 1e-6 && 
+            Math.abs(fp.y - elementPoint.y) < 1e-6 && 
+            Math.abs(fp.z - elementPoint.z) < 1e-6
+          );
+          if (matchingFramePoint) {
+            elementPoint.id = matchingFramePoint.id;
+            console.log(`Assigned ID ${matchingFramePoint.id} to element point at (${elementPoint.x}, ${elementPoint.y}, ${elementPoint.z})`);
+          }
+        });
+      }
+    });
+  }
+  
+  // Show the first frame
+  if (frames && frames.length > 0) {
+    showSimulationFrame(0);
+  }
+  
+  updateSimScrubberUI();
+}
+
 async function runSimulation() {
   const payload = buildModel();
   console.log("Simulating model:", payload);
@@ -1672,7 +1883,7 @@ async function runSimulation() {
   
   // Disable button to prevent multiple clicks
   const playBtn = document.getElementById("play-sim-btn");
-  playBtn.disabled = true;
+  if (playBtn) playBtn.disabled = true;
 
   try {
     const resp = await fetch(`/simulate?step=0.005&simulation_time=10`, {
@@ -1684,7 +1895,11 @@ async function runSimulation() {
     if (resp.ok) {
       const data = await resp.json();
       if (data.simulation_data && data.simulation_data.length > 0) {
-        await playSimulation(data.simulation_data);
+        initializeSimulation(data.simulation_data);
+        // Start playing immediately
+        simulationPlaying = true;
+        updateSimScrubberUI();
+        startSimulationPlayback();
       } else {
         console.warn("Simulation returned no data.");
       }
@@ -1694,106 +1909,65 @@ async function runSimulation() {
   } catch (err) {
     console.error("Failed to fetch simulation:", err);
   } finally {
-    playBtn.disabled = false;
+    if (playBtn) playBtn.disabled = false;
   }
 }
 
-let originalElements = null;
-
-async function playSimulation(frames) {
-  originalElements = JSON.parse(JSON.stringify(globalThis.elements));
-
-  // Build mapping from original coordinates to solver point IDs
-  const tempElements = globalThis.elements;
-  globalThis.elements = JSON.parse(JSON.stringify(originalElements));
-  const modelForMapping = buildModel();
-  globalThis.elements = tempElements;
-  const coordToIdMap = new Map();
-  modelForMapping.points.forEach(p => {
-    const key = `${p.x.toFixed(6)},${p.y.toFixed(6)},${p.z.toFixed(6)}`;
-    coordToIdMap.set(key, p.id);
-  });
-
-  // Get simulation time range
-  const simStart = frames[0].time;
-  const simEnd = frames[frames.length - 1].time;
-  const simDuration = simEnd - simStart;
-
-  let startWallTime = null;
-  let lastTime = performance.now();
-  const fpsDisplay = document.getElementById("fps-display");
-  let lastFpsUpdate = performance.now();
-  let frameCount = 0;
-
-  function interpolatePoints(t) {
-    // Find the two frames that bound t
-    let i = 0;
-    while (i < frames.length - 1 && frames[i + 1].time < t) i++;
-    const f0 = frames[i];
-    const f1 = frames[Math.min(i + 1, frames.length - 1)];
-    const t0 = f0.time, t1 = f1.time;
-    const alpha = t1 > t0 ? (t - t0) / (t1 - t0) : 0;
-    // Interpolate each point
-    const interp = {};
-    f0.points.forEach((p0, idx) => {
-      const p1 = f1.points[idx];
-      interp[p0.id] = {
-        x: p0.x + (p1.x - p0.x) * alpha,
-        y: p0.y + (p1.y - p0.y) * alpha,
-        z: p0.z + (p1.z - p0.z) * alpha,
-      };
-    });
-    return interp;
-  }
-
+function startSimulationPlayback() {
+  if (!simulationFrames || simulationFrames.length === 0) return;
+  
+  console.log("Starting simulation playback from frame:", simulationFrameIndex);
+  simulationPlaying = true;
+  updateSimScrubberUI();
+  
+  // Use setInterval for more precise timing
+  // Calculate how many frames to advance per interval
+  const totalSimulationTime = 10.0; // seconds (from simulation_time=10)
+  const totalFrames = simulationFrames.length;
+  const playbackDuration = totalSimulationTime; // seconds (real-time)
+  
+  // Use 60 FPS for smooth animation, but calculate how many simulation frames to advance per animation frame
+  const animationFPS = 60;
+  const animationInterval = 1000 / animationFPS; // ~16.67ms
+  const simulationFramesPerAnimationFrame = (totalFrames * animationInterval) / (playbackDuration * 1000);
+  
+  console.log(`Playback: ${totalFrames} frames over ${playbackDuration}s`);
+  console.log(`Animation: ${animationFPS} FPS, advancing ${simulationFramesPerAnimationFrame.toFixed(3)} simulation frames per animation frame`);
+  
+  let lastFrameTime = performance.now();
+  
   function animate(currentTime) {
-    if (!startWallTime) startWallTime = currentTime;
-    const elapsed = (currentTime - startWallTime) / 1000; // seconds
-    let simTime = simStart + elapsed;
-    if (simTime > simEnd) simTime = simEnd;
-
-    // Interpolate positions
-    const interp = interpolatePoints(simTime);
-    globalThis.elements.forEach((el, elIndex) => {
-      const originalEl = originalElements[elIndex];
-      if (el.points && originalEl.points) {
-        el.points.forEach((p, pIndex) => {
-          const originalP = originalEl.points[pIndex];
-          const key = `${originalP.x.toFixed(6)},${originalP.y.toFixed(6)},${originalP.z.toFixed(6)}`;
-          const pointId = coordToIdMap.get(key);
-          if (pointId && interp[pointId]) {
-            const newPos = interp[pointId];
-            p.x = newPos.x;
-            p.y = newPos.y;
-            p.z = newPos.z;
-          }
-        });
+    if (!simulationPlaying || !simulationFrames) {
+      stopSimulationPlayback();
+      return;
+    }
+    
+    // Calculate how many simulation frames to advance based on elapsed time
+    const elapsedTime = currentTime - lastFrameTime;
+    const framesToAdvance = Math.floor((elapsedTime / 1000) * (totalFrames / playbackDuration));
+    
+    if (framesToAdvance > 0) {
+      // Advance frames
+      simulationFrameIndex += framesToAdvance;
+      
+      if (simulationFrameIndex >= simulationFrames.length) {
+        // Reached the end
+        handleSimulationEnd();
+        return;
       }
-    });
-    render(false);
-
-    // FPS display (true browser FPS)
-    frameCount++;
-    if (currentTime - lastFpsUpdate > 500) {
-      const fps = (frameCount * 1000) / (currentTime - lastFpsUpdate);
-      if (fpsDisplay) fpsDisplay.textContent = `FPS: ${fps.toFixed(1)}`;
-      lastFpsUpdate = currentTime;
-      frameCount = 0;
+      
+      showSimulationFrame(simulationFrameIndex);
+      updateSimScrubberUI(); // Update scrubber during playback
+      lastFrameTime = currentTime;
     }
-
-    if (simTime < simEnd) {
-      requestAnimationFrame(animate);
-    } else {
-      // Restore original state when animation is done
-      globalThis.elements = originalElements;
-      originalElements = null;
-      render();
-      if (fpsDisplay) fpsDisplay.textContent = "";
-    }
+    
+    simulationAnimationId = requestAnimationFrame(animate);
   }
-
-  requestAnimationFrame(animate);
+  
+  animate();
 }
+
+
 
 
 async function solveModel() {
@@ -2097,7 +2271,52 @@ async function solveModel() {
 }
 
 document.getElementById("solve-btn").addEventListener("click", solveModel);
-document.getElementById("play-sim-btn").addEventListener("click", runSimulation);
+
+// Function to handle when simulation reaches the end
+function handleSimulationEnd() {
+  simulationFrameIndex = simulationFrames.length - 1;
+  showSimulationFrame(simulationFrameIndex);
+  simulationPlaying = false;
+  simulationAnimationId = null;
+  updateSimScrubberUI();
+}
+
+// Fix the play button event listener to work with the entire button including the icon
+const playBtn = document.getElementById("play-sim-btn");
+if (playBtn) {
+  // Use mousedown instead of click to ensure it works with the entire button including icon
+  playBtn.addEventListener("mousedown", async (ev) => {
+    // Prevent event bubbling to avoid conflicts
+    ev.preventDefault();
+    ev.stopPropagation();
+    
+    console.log("Play button clicked, simulationPlaying:", simulationPlaying);
+    console.log("simulationFrames:", simulationFrames);
+    console.log("simulationFrameIndex:", simulationFrameIndex);
+    
+    if (simulationPlaying) {
+      // Pause the simulation
+      console.log("Pausing simulation");
+      stopSimulationPlayback();
+    } else if (simulationFrames && simulationFrames.length > 0) {
+      // Check if we're at the end and need to reset
+      console.log("simulationFrameIndex:", simulationFrameIndex, "frames length:", simulationFrames.length);
+      if (simulationFrameIndex >= simulationFrames.length - 1) {
+        console.log("At end, resetting to start and playing");
+        resetSimulationToStart();
+        startSimulationPlayback();
+      } else {
+        // Resume from current position
+        console.log("Resuming from current position, frame:", simulationFrameIndex);
+        startSimulationPlayback();
+      }
+    } else {
+      // Start new simulation
+      console.log("Starting new simulation");
+      await runSimulation();
+    }
+  });
+}
 
 // Global variable to store the last calculation results
 let lastCalculationResults = null;
@@ -2249,6 +2468,7 @@ function renderCalculationResults() {
 }
 
 loadState();
+setupSimulationEventListeners();
 
 function selectElement(id) {
   globalThis.selectedId = id;
@@ -2294,3 +2514,62 @@ function calculateLength(el) {
   }
   return 0.1; // Default length
 }
+
+// Add event listeners for simulation controls
+function setupSimulationEventListeners() {
+  const scrubber = document.getElementById("sim-time-scrubber");
+  if (scrubber) {
+    // Remove any existing listeners to avoid duplicates
+    scrubber.removeEventListener("input", handleScrubberInput);
+    scrubber.removeEventListener("change", handleScrubberChange);
+    
+    // Add new listeners
+    scrubber.addEventListener("input", handleScrubberInput);
+    scrubber.addEventListener("change", handleScrubberChange);
+    console.log("Added scrubber event listeners");
+  }
+  // Don't log error in test environment where scrubber doesn't exist
+}
+
+function handleScrubberInput(ev) {
+  console.log("Scrubber input event:", ev.target.value);
+  console.log("Current simulationFrameIndex before:", simulationFrameIndex);
+  stopSimulationPlayback();
+  const newIndex = parseInt(ev.target.value, 10);
+  console.log("New index:", newIndex);
+  simulationFrameIndex = newIndex; // Update the global index
+  console.log("Updated simulationFrameIndex to:", simulationFrameIndex);
+  showSimulationFrame(newIndex);
+  // Update time display without updating scrubber value to avoid conflicts
+  const timeDisplay = document.getElementById("sim-time-display");
+  if (timeDisplay && simulationFrames && simulationFrames[newIndex]) {
+    timeDisplay.textContent = `${simulationFrames[newIndex].time.toFixed(2)}s`;
+  }
+  // Force a re-render to ensure the canvas updates
+  render(false);
+}
+
+function handleScrubberChange(ev) {
+  console.log("Scrubber change event:", ev.target.value);
+  console.log("Current simulationFrameIndex before:", simulationFrameIndex);
+  const newIndex = parseInt(ev.target.value, 10);
+  console.log("New index:", newIndex);
+  simulationFrameIndex = newIndex; // Update the global index
+  console.log("Updated simulationFrameIndex to:", simulationFrameIndex);
+  showSimulationFrame(newIndex);
+  // Update time display without updating scrubber value to avoid conflicts
+  const timeDisplay = document.getElementById("sim-time-display");
+  if (timeDisplay && simulationFrames && simulationFrames[newIndex]) {
+    timeDisplay.textContent = `${simulationFrames[newIndex].time.toFixed(2)}s`;
+  }
+  // Force a re-render to ensure the canvas updates
+  render(false);
+}
+
+// Set up event listeners when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  setupSimulationEventListeners();
+});
+
+// Set up simulation event listeners
+setupSimulationEventListeners();

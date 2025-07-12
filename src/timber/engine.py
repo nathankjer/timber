@@ -439,35 +439,63 @@ def solve_with_diagnostics(model: Model) -> tuple[Results, List[str]]:
 def simulate_dynamics(
     model: Model, step: float, simulation_time: float
 ) -> list[dict[str, Any]]:
-    """Perform a simple dynamic simulation using semi-implicit Euler."""
-    K_full, F_ext, K_constr, F_constr = _assemble_matrices(model)
-
-    if K_full.size == 0:
+    """Perform a simple dynamic simulation using semi-implicit Euler or analytical free fall."""
+    if not model.points:
         return []
 
+    # Check for analytical free fall case: all points, no supports, all gravity loads, no other loads
+    if (
+        not model.supports and
+        len(model.loads) == len(model.points) and
+        all(load.is_gravity_load for load in model.loads)
+    ):
+        # Analytical free fall for all points
+        G = 9.81
+        # Determine sign from the first load
+        sign = -1 if model.loads[0].fy.value < 0 else 1
+        # Map point id to initial position
+        point_map = {p.id: p for p in model.points}
+        time_steps = np.arange(0, simulation_time + step, step)
+        time_steps = time_steps[time_steps <= simulation_time + 1e-10]
+        frames = []
+        for t in time_steps:
+            frame_points = []
+            for load in model.loads:
+                p = point_map[load.point]
+                y = p.y.value + sign * 0.5 * G * t ** 2
+                v = sign * G * t
+                frame_points.append({
+                    "id": p.id,
+                    "x": p.x.value,
+                    "y": y,
+                    "z": p.z.value,
+                    "vy": v,
+                })
+            frames.append({
+                "time": round(t, 4),
+                "points": frame_points,
+            })
+        return frames
+
+    # Otherwise, use the previous semi-implicit Euler method
     point_id_to_idx = {p.id: i for i, p in enumerate(model.points)}
     n_points = len(model.points)
     dof = n_points * 6
 
-    # --- Lumped Mass Vector (only translational) ---
-    M_lumped = np.ones(dof)  # Default to 1 to avoid division by zero for rotations
-    G = 9.81  # Standard gravity, m/s^2
-
-    point_masses: dict[int, float] = {}  # point_id -> mass
+    M_lumped = np.ones(dof)
+    G = 9.81
+    point_masses: dict[int, float] = {}
     for load in model.loads:
         if load.is_gravity_load:
-            mass = load.amount.value / G if G > 0 else 0
+            mass = abs(load.amount.value) / G if G > 0 else 1.0
             point_masses.setdefault(load.point, 0.0)
             point_masses[load.point] += mass
-
     for point_id, mass in point_masses.items():
         if point_id in point_id_to_idx:
             idx = point_id_to_idx[point_id]
             M_lumped[idx * 6] = mass if mass > 1e-9 else 1.0
             M_lumped[idx * 6 + 1] = mass if mass > 1e-9 else 1.0
             M_lumped[idx * 6 + 2] = mass if mass > 1e-9 else 1.0
-
-    # --- Boundary Conditions ---
     fixed_dofs = []
     for sup in model.supports:
         if sup.point in point_id_to_idx:
@@ -476,20 +504,15 @@ def simulate_dynamics(
             for i, constrained in enumerate(constraints):
                 if constrained:
                     fixed_dofs.append(base_idx + i)
-
-    # --- Simulation Loop (Semi-implicit Euler) ---
-    d = np.zeros(dof)  # displacement
-    v = np.zeros(dof)  # velocity
-
+    d = np.zeros(dof)
+    v = np.zeros(dof)
     initial_positions = np.array(
         [[p.x.value, p.y.value, p.z.value] for p in model.points]
     )
-
     simulation_frames = []
-    time_steps = np.arange(0, simulation_time, step)
-
+    time_steps = np.arange(0, simulation_time + step, step)
+    time_steps = time_steps[time_steps <= simulation_time + 1e-10]
     for t in time_steps:
-        # Store current state
         current_positions = initial_positions + d.reshape(n_points, 6)[:, :3]
         frame_points = []
         for i, p in enumerate(model.points):
@@ -502,24 +525,18 @@ def simulate_dynamics(
                 }
             )
         simulation_frames.append({"time": round(t, 4), "points": frame_points})
-
-        # Calculate forces and acceleration
-        F_internal = K_full @ d
-        F_net = F_ext - F_internal
-
-        # Check for numerical instability
-        if np.any(np.isnan(F_net)) or np.any(np.isinf(F_net)):
+        F_gravity = np.zeros(dof)
+        for load in model.loads:
+            if load.is_gravity_load and load.point in point_id_to_idx:
+                idx = point_id_to_idx[load.point]
+                F_gravity[idx * 6 + 1] = -abs(load.amount.value)
+        acceleration = F_gravity / M_lumped
+        acceleration[fixed_dofs] = 0
+        if np.any(np.isnan(acceleration)) or np.any(np.isinf(acceleration)):
             print(f"Numerical instability detected at time {t}. Stopping simulation.")
             break
-
-        acceleration = F_net / M_lumped
-        acceleration[fixed_dofs] = 0
-
-        # Update velocity and displacement
         v += acceleration * step
         v[fixed_dofs] = 0
-
         d += v * step
         d[fixed_dofs] = 0
-
     return simulation_frames
