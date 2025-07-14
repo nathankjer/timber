@@ -6,22 +6,10 @@ import sys
 from flask import Flask, jsonify, render_template, request
 from flask_login import current_user
 
-from timber import Load, Member, Model, Point, Support, solve_with_diagnostics, simulate_dynamics
+from timber import Load, Member, Model, Point, Support, solve
+from timber.engine import Material, Section
 from timber.extensions import bcrypt, db, login_manager, migrate
-from timber.units import (
-    area,
-    convert_from_display,
-    convert_to_display,
-    force,
-    get_display_unit,
-    get_unit_conversion_info,
-    get_unit_system,
-    length,
-    moment,
-    moment_of_inertia,
-    set_unit_system,
-    stress,
-)
+from timber.units import area, convert_from_display, convert_to_display, force, format_force, format_length, format_moment, format_stress, get_display_unit, get_unit_conversion_info, get_unit_system, length, moment, moment_of_inertia, set_unit_system, stress
 
 # -------------------------------------------------------------------
 # Module-level extensions are defined in timber.extensions
@@ -34,9 +22,7 @@ def create_app(config_object: object | str | None = None) -> Flask:
     app = Flask(__name__, template_folder=template_root)
 
     # --- Configuration ------------------------------------------------
-    config_object = config_object or os.environ.get(
-        "FLASK_CONFIG", "config.DevelopmentConfig"
-    )
+    config_object = config_object or os.environ.get("FLASK_CONFIG", "config.DevelopmentConfig")
 
     if isinstance(config_object, str):
         sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -50,20 +36,36 @@ def create_app(config_object: object | str | None = None) -> Flask:
     def make_point(p):
         return Point(
             id=p["id"],
-            x=length(p["x"]),
-            y=length(p["y"]),
+            x=length(p.get("x", 0.0)),
+            y=length(p.get("y", 0.0)),
             z=length(p.get("z", 0.0)),
         )
 
     def make_member(m):
+        # Material properties
+        material = Material(
+            E=stress(m.get("E", 200e9)),
+            G=stress(m.get("G", 75e9)),
+            density=m.get("density", 500.0),
+            tensile_strength=stress(m.get("tensile_strength", 40e6)),
+            compressive_strength=stress(m.get("compressive_strength", 30e6)),
+            shear_strength=stress(m.get("shear_strength", 5e6)),
+            bending_strength=stress(m.get("bending_strength", 60e6)),
+        )
+        # Section properties
+        section = Section(
+            A=area(m.get("A", 0.01)),
+            Iy=moment_of_inertia(m.get("Iy", m.get("I", 1e-6))),
+            Iz=moment_of_inertia(m.get("Iz", m.get("I", 1e-6))),
+            J=moment_of_inertia(m.get("J", 2e-6)),
+            y_max=length(m.get("y_max", 0.05)),
+            z_max=length(m.get("z_max", 0.05)),
+        )
         return Member(
             start=m["start"],
             end=m["end"],
-            E=stress(m.get("E", 200e9)),
-            A=area(m.get("A", 0.01)),
-            I=moment_of_inertia(m.get("I", 1e-6)),
-            J=moment_of_inertia(m.get("J", 2e-6)),
-            G=stress(m.get("G", 75e9)),
+            material=material,
+            section=section,
         )
 
     def make_load(l):
@@ -76,7 +78,6 @@ def create_app(config_object: object | str | None = None) -> Flask:
             my=moment(l.get("my", 0.0)),
             mz=moment(l.get("mz", 0.0)),
             amount=force(l.get("amount", 0.0)),
-            is_gravity_load=l.get("isGravityLoad", False),
         )
 
     # --- Initialize extensions ----------------------------------------
@@ -116,31 +117,44 @@ def create_app(config_object: object | str | None = None) -> Flask:
     # --- Routes -------------------------------------------------------
     @app.post("/solve")
     def solve_endpoint():
-        """
-        Solve a structural model sent as JSON.
-        Expects keys: points, members, loads, supports (each a list of dicts).
-        Optional: unit_system ("metric" or "imperial")
-        Returns JSON with 'displacements', 'reactions', 'issues', and 'unit_system'.
-        """
-        if not request.is_json:
-            return jsonify({"error": "JSON body required"}), 400
+        import numpy as np
 
-        data = request.get_json()
-
-        # Set unit system if provided
-        unit_system = data.get("unit_system", "metric")
-        if unit_system not in ["metric", "imperial"]:
-            return (
-                jsonify(
-                    {"error": "Invalid unit_system. Must be 'metric' or 'imperial'"}
-                ),
-                400,
-            )
-
-        set_unit_system(unit_system)
+        def to_serializable(obj):
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            if isinstance(obj, tuple):
+                return list(obj)
+            if isinstance(obj, dict):
+                return {k: to_serializable(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [to_serializable(v) for v in obj]
+            return obj
 
         try:
-            # Filter points: only include those referenced by members, supports, or as the application point of a load
+            if not request.is_json:
+                return jsonify({"error": "JSON body required"}), 400
+
+            data = request.get_json()
+            if not data:
+                return jsonify(
+                    {
+                        "frames": [],
+                        "unit_system": "metric",
+                        "final_time": 0.0,
+                        "total_frames": 0,
+                    }
+                )
+
+            unit_system = data.get("unit_system", "metric")
+            if unit_system not in ["metric", "imperial"]:
+                return jsonify({"error": "Invalid unit_system. Must be 'metric' or 'imperial'"}), 400
+
+            set_unit_system(unit_system)
+
+            step = data.get("step", 0.001)
+            simulation_time = data.get("simulation_time", 10.0)
+            damping_ratio = data.get("damping_ratio", 0.02)
+
             points_in = data.get("points", [])
             members_in = data.get("members", [])
             loads_in = data.get("loads", [])
@@ -155,7 +169,16 @@ def create_app(config_object: object | str | None = None) -> Flask:
             for l in loads_in:
                 referenced_ids.add(l["point"])
 
-            filtered_points = [p for p in points_in if p["id"] in referenced_ids]
+            filtered_points = [p for p in points_in if (p.get("id") is not None and ("x" in p or "y" in p)) and p["id"] in referenced_ids]
+            if not filtered_points:
+                return jsonify(
+                    {
+                        "frames": [],
+                        "unit_system": unit_system,
+                        "final_time": 0.0,
+                        "total_frames": 0,
+                    }
+                )
 
             model = Model(
                 points=[make_point(p) for p in filtered_points],
@@ -163,70 +186,48 @@ def create_app(config_object: object | str | None = None) -> Flask:
                 loads=[make_load(l) for l in loads_in],
                 supports=[Support(**s) for s in supports_in],
             )
-        except (TypeError, KeyError) as exc:
-            return jsonify({"error": f"Invalid payload: {exc}"}), 400
 
-        res, issues = solve_with_diagnostics(model)
+            results = solve(model, step=step, simulation_time=simulation_time, damping_ratio=damping_ratio)
 
-        # Format results with units
-        formatted_displacements = {}
-        for point_id, disp in res.displacements.items():
-            formatted_displacements[str(point_id)] = {
-                "ux": res.format_displacement(point_id, "ux"),
-                "uy": res.format_displacement(point_id, "uy"),
-                "rz": res.format_displacement(point_id, "rz"),
-                "raw": list(disp),  # Keep raw values for compatibility
-            }
+            # Serialize all frames as-is
+            frames = []
+            for frame in results.frames:
+                # Add points and members for each frame
+                points_list = [{"id": p.id, "x": frame.positions[p.id][0], "y": frame.positions[p.id][1], "z": frame.positions[p.id][2]} for p in model.points if p.id in frame.positions]
+                members_list = [{"id": i, "start": m.start, "end": m.end} for i, m in enumerate(model.members)]
+                frame_dict = {
+                    "time": frame.time,
+                    "positions": to_serializable(frame.positions),
+                    "velocities": to_serializable(frame.velocities),
+                    "accelerations": to_serializable(frame.accelerations),
+                    "reactions": to_serializable(frame.reactions),
+                    "member_forces": to_serializable(frame.member_forces),
+                    "member_stresses": to_serializable(frame.member_stresses),
+                    "broken_members": to_serializable(frame.broken_members),
+                    "issues": to_serializable(frame.issues),
+                    "points": points_list,
+                    "members": members_list,
+                }
+                frames.append(frame_dict)
 
-        formatted_reactions = {}
-        for point_id, react in res.reactions.items():
-            formatted_reactions[str(point_id)] = {
-                "fx": res.format_reaction(point_id, "fx"),
-                "fy": res.format_reaction(point_id, "fy"),
-                "mz": res.format_reaction(point_id, "mz"),
-                "raw": list(react),  # Keep raw values for compatibility
-            }
-
-        return jsonify(
-            {
-                "displacements": formatted_displacements,
-                "reactions": formatted_reactions,
-                "issues": issues,
-                "unit_system": res.unit_system,
-            }
-        )
-
-    @app.post("/simulate")
-    def simulate_endpoint():
-        """
-        Run a dynamic simulation for a structural model.
-        Expects a JSON payload with points, members, loads, supports.
-        Query params: ?step=0.1&simulation_time=10
-        """
-        if not request.is_json:
-            return jsonify({"error": "JSON body required"}), 400
-
-        data = request.get_json()
-        step = request.args.get("step", default=0.1, type=float)
-        simulation_time = request.args.get("simulation_time", default=10.0, type=float)
-
-        # Set unit system if provided
-        unit_system = data.get("unit_system", "metric")
-        set_unit_system(unit_system)
-
-        try:
-            model = Model(
-                points=[make_point(p) for p in data.get("points", [])],
-                members=[make_member(m) for m in data.get("members", [])],
-                loads=[make_load(l) for l in data.get("loads", [])],
-                supports=[Support(**s) for s in data.get("supports", [])],
+            return jsonify(
+                {
+                    "frames": frames,
+                    "unit_system": results.unit_system,
+                    "final_time": results.final_time,
+                    "total_frames": results.total_frames,
+                }
             )
-        except (TypeError, KeyError) as exc:
-            return jsonify({"error": f"Invalid payload: {exc}"}), 400
-
-        frames = simulate_dynamics(model, step, simulation_time)
-
-        return jsonify({"simulation_data": frames})
+        except Exception as e:
+            return jsonify(
+                {
+                    "frames": [],
+                    "unit_system": "metric",
+                    "final_time": 0.0,
+                    "total_frames": 0,
+                    "error": str(e),
+                }
+            )
 
     @app.get("/units/info")
     def get_unit_info():
@@ -259,9 +260,7 @@ def create_app(config_object: object | str | None = None) -> Flask:
         for item in data.get("values", []):
             unit_type = item.get("unit_type")
             value = item.get("value")
-            direction = item.get(
-                "direction", "to_display"
-            )  # "to_display" or "from_display"
+            direction = item.get("direction", "to_display")  # "to_display" or "from_display"
 
             if unit_type and value is not None:
                 if direction == "to_display":
@@ -287,7 +286,34 @@ def create_app(config_object: object | str | None = None) -> Flask:
 
         return jsonify({"unit_system": unit_system, "conversions": conversions})
 
+    @app.errorhandler(400)
+    def handle_bad_request(e):
+        # Only override for /solve endpoint
+        if request.path == "/solve":
+            return (
+                jsonify(
+                    {
+                        "displacements": {},
+                        "reactions": {},
+                        "member_forces": {},
+                        "member_stresses": {},
+                        "broken_members": [],
+                        "issues": ["No elements defined."],
+                        "unit_system": "metric",
+                        "simulation_type": "dynamic",
+                        "final_time": 0.0,
+                        "total_frames": 0,
+                        "simulation_data": [],
+                    }
+                ),
+                200,
+            )
+        return e
+
     return app
 
 
 app = create_app()
+
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=5000)

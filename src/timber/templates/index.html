@@ -58,7 +58,8 @@
           </div>
           <div class="col-md-6">
             <div class="d-flex align-items-center">
-              <button type="button" id="play-sim-btn" class="btn btn-outline-primary btn-sm me-2"><i class="bi bi-play-fill"></i></button>
+              <button type="button" id="solve-btn" class="btn btn-outline-primary btn-sm me-2"><i class="bi bi-calculator"></i> Solve</button>
+              <button type="button" id="play-sim-btn" class="btn btn-outline-success btn-sm me-2" style="display: none;"><i class="bi bi-play-fill"></i></button>
               <div class="flex-grow-1 me-2">
                 <input type="range" class="form-range" id="sim-time-scrubber" min="0" max="100" value="0" step="1" disabled>
               </div>
@@ -72,7 +73,6 @@
       <h2>Properties</h2>
       <div id="props-content" class="mb-3"></div>
       <button id="delete-btn" class="btn btn-danger btn-sm" disabled>Delete</button>
-      <button id="solve-btn" class="btn btn-primary btn-sm mt-2">Solve</button>
       <pre id="solve-output" class="mt-3 small"></pre>
     </div>
   </div>

@@ -11,27 +11,7 @@ import pytest
 
 sys.path.append("src")
 
-from timber.units import (
-    UnitConversion,
-    UnitSystemManager,
-    format_acceleration,
-    format_area,
-    format_force,
-    format_length,
-    format_moment,
-    format_moment_of_inertia,
-    format_stress,
-    get_unit_manager,
-    get_unit_system,
-    parse_acceleration,
-    parse_area,
-    parse_force,
-    parse_length,
-    parse_moment,
-    parse_moment_of_inertia,
-    parse_stress,
-    set_unit_system,
-)
+from timber.units import UnitConversion, UnitSystemManager, format_acceleration, format_area, format_force, format_length, format_moment, format_moment_of_inertia, format_stress, get_unit_manager, get_unit_system, parse_acceleration, parse_area, parse_force, parse_length, parse_moment, parse_moment_of_inertia, parse_stress, set_unit_system
 
 
 class TestUnitSystemManager:
@@ -372,9 +352,7 @@ class TestGlobalUnitFunctions:
         """Test moment of inertia parsing in imperial system."""
         set_unit_system("imperial")
         assert parse_moment_of_inertia("1 in⁴") == pytest.approx(4.1623e-7, rel=1e-4)
-        assert parse_moment_of_inertia("1") == pytest.approx(
-            4.1623e-7, rel=1e-4
-        )  # assumes in⁴
+        assert parse_moment_of_inertia("1") == pytest.approx(4.1623e-7, rel=1e-4)  # assumes in⁴
 
     def test_parse_acceleration_metric(self):
         """Test acceleration parsing in metric system."""
@@ -386,9 +364,7 @@ class TestGlobalUnitFunctions:
         """Test acceleration parsing in imperial system."""
         set_unit_system("imperial")
         assert parse_acceleration("1 ft/s²") == pytest.approx(0.3048, rel=1e-4)
-        assert parse_acceleration("1") == pytest.approx(
-            0.3048, rel=1e-4
-        )  # assumes ft/s²
+        assert parse_acceleration("1") == pytest.approx(0.3048, rel=1e-4)  # assumes ft/s²
 
 
 class TestUnitConstants:

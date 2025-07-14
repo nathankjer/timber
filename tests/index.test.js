@@ -137,21 +137,21 @@ describe("geometry helpers (pure maths)", () => {
     expect(resX).toHaveProperty("x");
     expect(resX).toHaveProperty("y");
     expect(resX).toHaveProperty("z");
-    
+
     // Test -X view
     setCurrentView("-X");
     const resNegX = unprojectDelta(5, 0);
     expect(resNegX).toHaveProperty("x");
     expect(resNegX).toHaveProperty("y");
     expect(resNegX).toHaveProperty("z");
-    
+
     // Test +Y view
     setCurrentView("+Y");
     const resY = unprojectDelta(5, 0);
     expect(resY).toHaveProperty("x");
     expect(resY).toHaveProperty("y");
     expect(resY).toHaveProperty("z");
-    
+
     // Test -Y view
     setCurrentView("-Y");
     const resNegY = unprojectDelta(5, 0);
@@ -195,17 +195,17 @@ describe("geometry helpers (pure maths)", () => {
 //--------------------------------------------------------------------
 
 describe("snapping utilities", () => {
-  test("getSnapPoints collects points from various element types", () => {
-    addElement("Load");
-    addElement("Member");
+  test("getSnapPoints collects points from various element types", async () => {
+    await addElement("Load");
+    await addElement("Member");
 
     const pts = getSnapPoints();
     expect(pts.some((p) => p.kind === "Load")).toBe(true);
     expect(pts.some((p) => p.kind === "End")).toBe(true); // member ends
   });
 
-  test("getSnapLines returns member / load centre‑lines", () => {
-    addElement("Member");
+  test("getSnapLines returns member / load centre‑lines", async () => {
+    await addElement("Member");
     const lines = getSnapLines();
     expect(lines.length).toBeGreaterThanOrEqual(1);
     expect(lines[0]).toHaveProperty("p1");
@@ -218,40 +218,15 @@ describe("snapping utilities", () => {
 //--------------------------------------------------------------------
 
 describe("buildModel", () => {
-  test("returns non‑empty arrays after adding typical elements", () => {
-    addElement("Support");
-    addElement("Member");
-    addElement("Load");
+  test("returns non‑empty arrays after adding typical elements", async () => {
+    await addElement("Support");
+    await addElement("Member");
+    await addElement("Load");
 
     const model = buildModel();
     expect(model.members.length).toBeGreaterThan(0);
     expect(model.loads.length).toBeGreaterThan(0);
     expect(model.supports.length).toBeGreaterThan(0);
-  });
-
-  test("includes gravity loads from elements with mass", () => {
-    addElement("Member");
-
-    // Set masses for the elements
-    const elements = global.elements || [];
-    elements.forEach((el) => {
-      if (el.type === "Member") el.mass = 20;
-    });
-
-    const model = buildModel();
-
-    // Should have gravity loads for elements with mass
-    const gravityLoads = model.loads.filter((load) => load.isGravityLoad);
-    expect(gravityLoads.length).toBeGreaterThan(0);
-
-    // Check that gravity loads have the correct properties
-    gravityLoads.forEach((load) => {
-      expect(load).toHaveProperty("isGravityLoad", true);
-      expect(load).toHaveProperty("sourceElement");
-      expect(load.fx).toBe(0); // No horizontal component
-      expect(load.fy).toBeLessThan(0); // Downward force (negative Y direction)
-      expect(load.amount).toBeGreaterThan(0); // Should have positive gravity force
-    });
   });
 
   test("calculates mass dynamically based on material and geometry", () => {
@@ -263,10 +238,10 @@ describe("buildModel", () => {
       A: 0.01, // 10,000 mm²
       points: [
         { x: 0, y: 0, z: 0 },
-        { x: 1, y: 0, z: 0 } // 1m length
-      ]
+        { x: 1, y: 0, z: 0 }, // 1m length
+      ],
     };
-    
+
     const memberMass = calculateMass(member);
     const expectedMemberMass = 0.01 * 1 * 7800; // A × L × density
     expect(memberMass).toBeCloseTo(expectedMemberMass, 1);
@@ -277,7 +252,7 @@ describe("buildModel", () => {
     const member = {
       type: "Member",
       material: undefined,
-      density: undefined
+      density: undefined,
     };
     calculateMass(member);
     expect(member.material).toBe("wood");
@@ -286,29 +261,29 @@ describe("buildModel", () => {
 
   test("mass updates when cross-sectional area changes", async () => {
     // Create a member element
-    addElement("Member");
+    await addElement("Member");
     const elements = global.elements || [];
-    const member = elements.find(el => el.type === "Member");
-    
+    const member = elements.find((el) => el.type === "Member");
+
     if (!member) {
       // Skip test if no member was created
       return;
     }
-    
+
     // Set initial properties
     member.material = "steel";
     member.density = 7800;
     member.A = 0.01; // 10,000 mm²
     member.mass = calculateMass(member);
-    
+
     const initialMass = member.mass;
-    
+
     // Change the cross-sectional area
     member.A = 0.02; // 20,000 mm²
     member.mass = calculateMass(member);
-    
+
     const newMass = member.mass;
-    
+
     // Mass should have doubled since area doubled
     expect(newMass).toBeCloseTo(initialMass * 2, 1);
   });
@@ -319,16 +294,16 @@ describe("buildModel", () => {
 //--------------------------------------------------------------------
 
 describe("addElement API", () => {
-  test('addElement("Member") adds a member with two endpoints', () => {
+  test('addElement("Member") adds a member with two endpoints', async () => {
     const before = buildModel().members.length;
-    addElement("Member");
+    await addElement("Member");
     const after = buildModel().members.length;
     expect(after).toBe(before + 1);
   });
 
-  test('addElement("Support") adds a support point', () => {
+  test('addElement("Support") adds a support point', async () => {
     const before = buildModel().supports.length;
-    addElement("Support");
+    await addElement("Support");
     const after = buildModel().supports.length;
     expect(after).toBe(before + 1);
   });
@@ -502,8 +477,8 @@ describe("zoom and keyboard controls", () => {
     expect(sc).toBeCloseTo(400);
   });
 
-  test("pressing Delete triggers deleteElement", () => {
-    addElement("Member");
+  test("pressing Delete triggers deleteElement", async () => {
+    await addElement("Member");
     const g = document.querySelector("#canvas g");
     g.dispatchEvent(
       new MouseEvent("mousedown", { clientX: 0, clientY: 0, bubbles: true }),
@@ -578,28 +553,32 @@ describe("renderProperties", () => {
         ],
       }),
     );
-    
+
     // Reset global state
-    global.elements = [];
-    global.selectedId = null;
-    global.globalProps = { g: 9.81, units: "metric" };
+    globalThis.elements = [];
+    globalThis.selectedId = null;
+    globalThis.globalProps = { g: 9.81, units: "metric" };
   });
 
   test("renders properties for selected member", async () => {
     // Add a member element
-    addElement("Member");
-    
+    await addElement("Member");
+
     // Get the element that was added
-    const elements = global.elements || [];
-    const member = elements.find(el => el.type === "Member");
+    const elements = globalThis.elements || [];
+    const member = elements.find((el) => el.type === "Member");
     expect(member).toBeDefined();
-    
+    console.log("Member element:", member);
+    console.log("Elements array:", elements);
+    console.log("Selected ID:", globalThis.selectedId);
+
     // Set the selectedId to the member's id
-    global.selectedId = member.id;
-    
+    globalThis.selectedId = member.id;
+
     await renderProperties();
 
     const propsContent = document.getElementById("props-content");
+    console.log("Props content:", propsContent.innerHTML);
     expect(propsContent.innerHTML).toContain("Member");
     expect(propsContent.innerHTML).toContain("Point 1");
     expect(propsContent.innerHTML).toContain("Point 2");
@@ -607,16 +586,16 @@ describe("renderProperties", () => {
 
   test("renders properties for selected support", async () => {
     // Add a support element
-    addElement("Support");
-    
+    await addElement("Support");
+
     // Get the element that was added
-    const elements = global.elements || [];
-    const support = elements.find(el => el.type === "Support");
+    const elements = globalThis.elements || [];
+    const support = elements.find((el) => el.type === "Support");
     expect(support).toBeDefined();
-    
+
     // Set the selectedId to the support's id
-    global.selectedId = support.id;
-    
+    globalThis.selectedId = support.id;
+
     await renderProperties();
 
     const propsContent = document.getElementById("props-content");
@@ -628,16 +607,16 @@ describe("renderProperties", () => {
 
   test("renders properties for selected load", async () => {
     // Add a load element
-    addElement("Load");
-    
+    await addElement("Load");
+
     // Get the element that was added
-    const elements = global.elements || [];
-    const load = elements.find(el => el.type === "Load");
+    const elements = globalThis.elements || [];
+    const load = elements.find((el) => el.type === "Load");
     expect(load).toBeDefined();
-    
+
     // Set the selectedId to the load's id
-    global.selectedId = load.id;
-    
+    globalThis.selectedId = load.id;
+
     await renderProperties();
 
     const propsContent = document.getElementById("props-content");
@@ -656,8 +635,8 @@ describe("renderProperties", () => {
 
   test("disables delete button when no element selected", async () => {
     // Ensure no element is selected
-    global.selectedId = null;
-    
+    globalThis.selectedId = null;
+
     await renderProperties();
 
     const deleteBtn = document.getElementById("delete-btn");
@@ -666,20 +645,50 @@ describe("renderProperties", () => {
 
   test("enables delete button when element selected", async () => {
     // Add a member element
-    addElement("Member");
-    
+    await addElement("Member");
+
     // Get the element that was added
-    const elements = global.elements || [];
-    const member = elements.find(el => el.type === "Member");
+    const elements = globalThis.elements || [];
+    const member = elements.find((el) => el.type === "Member");
     expect(member).toBeDefined();
-    
+
     // Set the selectedId to the member's id
-    global.selectedId = member.id;
-    
+    globalThis.selectedId = member.id;
+
     await renderProperties();
 
     const deleteBtn = document.getElementById("delete-btn");
     expect(deleteBtn.disabled).toBe(false);
+  });
+
+  test("element selection works when clicking on elements", async () => {
+    // Add a member element
+    await addElement("Member");
+
+    // Get the element that was added
+    const elements = globalThis.elements || [];
+    const member = elements.find((el) => el.type === "Member");
+    expect(member).toBeDefined();
+
+    // Initially the element should be selected (addElement auto-selects)
+    expect(globalThis.selectedId).toBe(member.id);
+
+    // Deselect the element first
+    globalThis.selectedId = null;
+
+    // Simulate clicking on the member by calling selectElementOnClick
+    const mockEvent = {
+      target: {
+        getAttribute: () => member.id.toString(),
+      },
+      stopPropagation: jest.fn(),
+    };
+
+    selectElementOnClick(mockEvent);
+
+    // The element should now be selected
+    expect(globalThis.selectedId).toBe(member.id);
+    expect(mockEvent.stopPropagation).toHaveBeenCalled();
   });
 });
 

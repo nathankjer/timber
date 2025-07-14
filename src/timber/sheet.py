@@ -29,9 +29,7 @@ def create_sheet():
     sheet = Sheet(name=name, user_id=current_user.id, unit_system=unit_system)  # type: ignore
     db.session.add(sheet)
     db.session.commit()
-    return jsonify(
-        {"id": sheet.id, "name": sheet.name, "unit_system": sheet.unit_system}
-    )
+    return jsonify({"id": sheet.id, "name": sheet.name, "unit_system": sheet.unit_system})
 
 
 @sheet_bp.get("/<int:sheet_id>")

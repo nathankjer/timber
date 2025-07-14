@@ -92,9 +92,7 @@ def test_list_and_create_sheet_default_name():
         data = resp.get_json()
 
         # Our created sheet must be present, with the right name
-        assert any(
-            item["id"] == new["id"] and item["name"] == "New Sheet" for item in data
-        )
+        assert any(item["id"] == new["id"] and item["name"] == "New Sheet" for item in data)
         # And there is at least one sheet
         assert len(data) >= 1
 
@@ -121,9 +119,7 @@ def test_update_sheet_all_error_branches_and_success():
 
         # 1) Non-JSON body
         resp = client.put(f"/sheet/{sid}", data="oops", content_type="text/plain")
-        assert (
-            resp.status_code == 400 and resp.get_json()["error"] == "JSON body required"
-        )
+        assert resp.status_code == 400 and resp.get_json()["error"] == "JSON body required"
 
         # 2) JSON but no name field
         resp = client.put(f"/sheet/{sid}", json={})
@@ -147,17 +143,10 @@ def test_record_action_all_branches_and_element_replacement():
 
         # Non-JSON body
         resp = client.post("/sheet/action", data="bad", content_type="text/plain")
-        assert (
-            resp.status_code == 400 and resp.get_json()["error"] == "JSON body required"
-        )
+        assert resp.status_code == 400 and resp.get_json()["error"] == "JSON body required"
 
         # Unknown sheet → 404
-        assert (
-            client.post(
-                "/sheet/action", json={"sheet_id": 999, "elements": []}
-            ).status_code
-            == 404
-        )
+        assert client.post("/sheet/action", json={"sheet_id": 999, "elements": []}).status_code == 404
 
         # First action with 1 element
         elem1 = [{"x": 1}]

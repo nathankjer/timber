@@ -1,6 +1,6 @@
 # Welcome to timber Docs
 
-*Single-page statics solver, industrial-grade accuracy.*
+*Single-page dynamics solver, industrial-grade accuracy.*
 
 Start with **Quick Start** in the README, then walk through:
 

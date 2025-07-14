@@ -1,6 +1,6 @@
 # timber
 
-_A single-page web application that lets **non-experts** solve and **visualise classical statics problems in 3-D**—yet is powerful enough for real-world structural design (think framing and tipping-up a timber barn)._
+_A single-page web application that lets **non-experts** solve and **visualise classical dynamics problems in 3-D**—yet is powerful enough for real-world structural design (think framing and tipping-up a timber barn)._
 
 ---
 
@@ -20,7 +20,7 @@ _A single-page web application that lets **non-experts** solve and **visualise c
 
 ## Features
 - 🌐 **One-page app** with responsive Bootstrap 5.3 UI.
-- ⚙️ **Double-precision statics solver** (NumPy) — < 100 ms for textbook models.
+- ⚙️ **Double-precision dynamics solver** (NumPy) — < 100 ms for textbook models.
 - 👀 **True-scale 3-D canvas** with six orthographic thumbnails.
 - 🔄 **Unit-aware UI** (metric ↔ imperial) while all math stays in SI base-units.
 - 🗂 **Multi-sheet projects** saved per-user; every action is logged.
@@ -53,7 +53,7 @@ _A single-page web application that lets **non-experts** solve and **visualise c
 ---
 
 ## Supported Use-Cases
-* Solve any first-year statics textbook problem _without prior statics knowledge_.
+* Solve any first-year dynamics textbook problem _without prior dynamics knowledge_.
 * Model a barn wall from 2 × 4 lumber, then compute the forces to **tip-up** the assembly.
 * Iterate on 3-D assemblies of joints, beams, and plates.
 
@@ -199,7 +199,7 @@ All changes must:
 ```markdown
 # timber Documentation
 
-Welcome to the complete reference for **timber**—the one-page statics solver and visualiser.
+Welcome to the complete reference for **timber**—the one-page dynamics solver and visualiser.
 
 | Section | Purpose |
 |---------|---------|

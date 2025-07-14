@@ -44,9 +44,7 @@ class Sheet(db.Model):  # type: ignore
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     name = db.Column(db.String(255), nullable=False)
-    unit_system = db.Column(
-        db.String(10), nullable=False, default="metric"
-    )  # "metric" or "imperial"
+    unit_system = db.Column(db.String(10), nullable=False, default="metric")  # "metric" or "imperial"
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(
         db.DateTime,

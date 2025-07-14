@@ -65,6 +65,18 @@ class UnitVector:
             luminous_intensity=self.luminous_intensity - other.luminous_intensity,
         )
 
+    def __neg__(self) -> "UnitVector":
+        """Negate unit vector (for division of quantities)."""
+        return UnitVector(
+            length=-self.length,
+            mass=-self.mass,
+            time=-self.time,
+            current=-self.current,
+            temperature=-self.temperature,
+            amount=-self.amount,
+            luminous_intensity=-self.luminous_intensity,
+        )
+
     def __eq__(self, other: "UnitVector") -> bool:
         """Check if unit vectors are equal."""
         return self._vector == other._vector
@@ -158,9 +170,7 @@ class UnitQuantity:
         if isinstance(other, (int, float)):
             return UnitQuantity(self.value * other, self.unit_vector)
         elif isinstance(other, UnitQuantity):
-            return UnitQuantity(
-                self.value * other.value, self.unit_vector + other.unit_vector
-            )
+            return UnitQuantity(self.value * other.value, self.unit_vector + other.unit_vector)
         else:
             return NotImplemented
 
@@ -173,9 +183,7 @@ class UnitQuantity:
         if isinstance(other, (int, float)):
             return UnitQuantity(self.value / other, self.unit_vector)
         elif isinstance(other, UnitQuantity):
-            return UnitQuantity(
-                self.value / other.value, self.unit_vector - other.unit_vector
-            )
+            return UnitQuantity(self.value / other.value, self.unit_vector - other.unit_vector)
         else:
             return NotImplemented
 
@@ -189,9 +197,7 @@ class UnitQuantity:
             if self.unit_vector == other.unit_vector:
                 return UnitQuantity(self.value + other.value, self.unit_vector)
             else:
-                raise ValueError(
-                    f"Cannot add quantities with different units: {self.unit_vector} and {other.unit_vector}"
-                )
+                raise ValueError(f"Cannot add quantities with different units: {self.unit_vector} and {other.unit_vector}")
         else:
             return NotImplemented
 
@@ -201,9 +207,7 @@ class UnitQuantity:
             if self.unit_vector == other.unit_vector:
                 return UnitQuantity(self.value - other.value, self.unit_vector)
             else:
-                raise ValueError(
-                    f"Cannot subtract quantities with different units: {self.unit_vector} and {other.unit_vector}"
-                )
+                raise ValueError(f"Cannot subtract quantities with different units: {self.unit_vector} and {other.unit_vector}")
         else:
             return NotImplemented
 
@@ -255,6 +259,16 @@ def moment_of_inertia(value: float, unit: str = "m⁴") -> UnitQuantity:
 
 def acceleration(value: float, unit: str = "m/s²") -> UnitQuantity:
     """Create an acceleration quantity."""
+    return UnitQuantity(value, UNIT_VECTORS[unit])
+
+
+def mass(value: float, unit: str = "kg") -> UnitQuantity:
+    """Create a mass quantity."""
+    return UnitQuantity(value, UNIT_VECTORS[unit])
+
+
+def velocity(value: float, unit: str = "m/s") -> UnitQuantity:
+    """Create a velocity quantity."""
     return UnitQuantity(value, UNIT_VECTORS[unit])
 
 
@@ -468,9 +482,7 @@ class UnitSystemManager:
         available_units = self._conversions[unit_type]
 
         # Sort by symbol length (longest first) to match "kN·m" before "N"
-        sorted_units = sorted(
-            available_units.items(), key=lambda x: len(x[1].symbol), reverse=True
-        )
+        sorted_units = sorted(available_units.items(), key=lambda x: len(x[1].symbol), reverse=True)
 
         for unit, conversion in sorted_units:
             if conversion.symbol in text:
